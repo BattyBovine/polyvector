@@ -2,7 +2,9 @@
 
 PolyVector::PolyVector()
 {
+#ifdef POLYVECTOR_DEBUG
 	this->os = OS::get_singleton();
+#endif
 
 	this->sSvgFile = "";
 	this->nsvgImage = NULL;
@@ -22,9 +24,9 @@ PolyVector::~PolyVector()
 bool PolyVector::set_svg_image(String filename)
 {
 	if (filename != this->sSvgFile) {
-#ifdef POLYVECTOR_DEBUG
+		#ifdef POLYVECTOR_DEBUG
 		uint64_t debugtimer = this->os->get_ticks_usec();
-#endif
+		#endif
 		this->sSvgFile = filename;
 		this->vFrameData.clear();
 
@@ -32,7 +34,7 @@ bool PolyVector::set_svg_image(String filename)
 		this->nsvgImage = nsvgParseFromFile(this->sSvgFile.ascii(true).get_data(), "px", 96);
 		if (this->nsvgImage == NULL)	return false;
 
-		std::vector<PVShape> framedata;
+		PVFrame framedata;
 		uint32_t shape_count = 0;
 		for (NSVGshape *shape = this->nsvgImage->shapes; shape; shape = shape->next) {
 			PVShape shapedata;
@@ -57,16 +59,20 @@ bool PolyVector::set_svg_image(String filename)
 				path_count++;
 			}
 			shapedata.id = shape_count;
-			framedata.push_back(shapedata);
+			shapedata.vertices.clear();
+			shapedata.indices.clear();
+			shapedata.strokes.clear();
+			framedata.shapes.push_back(shapedata);
 			shape_count++;
 		}
+		for(int i=POLYVECTOR_MIN_QUALITY; i<=POLYVECTOR_MAX_QUALITY; i++) framedata.triangulated[i] = false;
 		this->vFrameData.push_back(framedata);
 
-#ifdef POLYVECTOR_DEBUG
+		#ifdef POLYVECTOR_DEBUG
 		printf("%s parsed in %.6f seconds\n",
 			   this->sSvgFile.ascii().get_data(),
 			   (this->os->get_ticks_usec() - debugtimer) / 1000000.0L);
-#endif
+		#endif
 	}
 
 	return this->triangulate_shapes();
@@ -74,94 +80,72 @@ bool PolyVector::set_svg_image(String filename)
 
 bool PolyVector::triangulate_shapes()
 {
-#ifdef POLYVECTOR_DEBUG
+	#ifdef POLYVECTOR_DEBUG
 	uint64_t debugtimer = this->os->get_ticks_usec();
-#endif
+	#endif
 
-	for(std::vector< std::vector<PVShape> >::iterator f = this->vFrameData.begin(); f != this->vFrameData.end(); f++) {
-		std::vector<PVShape> &frame = *f;
-		for(std::vector<PVShape>::iterator s = frame.begin(); s != frame.end(); s++) {
-			PVShape &shape = *s;
-			if(!shape.triangles[this->iCurveQuality].empty())
-				continue;
-			uint16_t shape_size = shape.size();
-			List<TriangulatorPoly> polygons;
-			for(uint16_t p = 0; p < shape_size; p++) {
-				PoolVector2Array tess = shape[p].curve.tessellate(this->iCurveQuality);
-				int tess_size = tess.size();
-				TriangulatorPoly poly;
-				poly.Init(tess_size);
-				Vector2 *tessarray = poly.GetPoints();
-				PoolVector2Array::Read tessreader = tess.read();
-				for(int i=0; i<tess_size; i++) tessarray[i] = tessreader[i];
-
-				if(!shape[p].closed) {		// If shape is not a closed loop, store as a stroke
-					shape.strokes[this->iCurveQuality].push_back(poly);
-				} else {					// Otherwise, triangulate
-					if(p == shape_size-1) {	// If this is the last path, assume it's a bounding polygon and turn counter-clockwise
-						poly.SetHole(false);
-						poly.SetOrientation(TRIANGULATOR_CCW);
-					} else {				// Anything before the last should be considered a hole and turned clockwise
-						poly.SetHole(true);
-						poly.SetOrientation(TRIANGULATOR_CW);
-					}
-					polygons.push_back(poly);
+	if(this->iFrame < this->vFrameData.size() && !this->vFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
+		for(std::vector<PVShape>::iterator shape = this->vFrameData[this->iFrame].shapes.begin(); shape != this->vFrameData[this->iFrame].shapes.end(); shape++) {
+			uint16_t shape_size = shape->size();
+			shape->vertices[this->iCurveQuality].clear();
+			std::vector< std::vector<Vector2> > polygons;
+			for(std::vector<PVPath>::iterator path = shape->paths.begin(); path != shape->paths.end(); path++) {
+				PoolVector2Array tess = path->curve.tessellate(this->iCurveQuality, POLYVECTOR_TESSELLATION_MAX_ANGLE);
+				if(!path->closed) {		// If shape is not a closed loop, store as a stroke
+					shape->strokes[this->iCurveQuality].push_back(tess);
+				} else {				// Otherwise, triangulate
+					int tess_size = tess.size();
+					std::vector<Vector2> poly;
+					PoolVector2Array::Read tessreader = tess.read();
+					for(int i=0; i<tess_size-1; i++)
+						poly.push_back(tessreader[i]);
+					polygons.insert(polygons.begin(), poly);
+					shape->vertices[this->iCurveQuality].insert(shape->vertices[this->iCurveQuality].begin(), poly.begin(), poly.end());
 				}
 			}
-			TriangulatorPartition triangulator;
-			List<TriangulatorPoly> noholes, triangles;
-			if(polygons.size()>0)	triangulator.Triangulate_EC(&polygons[polygons.size()-1], &triangles);
-			//triangulator.RemoveHoles(&polygons, &noholes);
-			//triangulator.Triangulate_EC(&noholes, &triangles);
-			if(triangles.size()>0)	shape.triangles[this->iCurveQuality].push_back(triangles);
+			if(!polygons.empty())	shape->indices[this->iCurveQuality] = mapbox::earcut<N>(polygons);
 		}
+		this->vFrameData[this->iFrame].triangulated[this->iCurveQuality] = true;
 	}
-#ifdef POLYVECTOR_DEBUG
+	#ifdef POLYVECTOR_DEBUG
 	return this->render_shapes(debugtimer);
-#else
+	#else
 	return this->render_shapes();
-#endif
+	#endif
 }
 
 bool PolyVector::render_shapes(uint64_t debugtimer)
 {
-	this->clear();
-	for(std::vector< std::vector<PVShape> >::iterator f = this->vFrameData.begin(); f != this->vFrameData.end(); f++) {
-		std::vector<PVShape> &frame = *f;
-		for(std::vector<PVShape>::iterator s = frame.begin(); s != frame.end(); s++) {
-			PVShape &shape = *s;
-			for(List< List<TriangulatorPoly> >::Element *it = shape.triangles[this->iCurveQuality].front(); it; it = it->next()) {
-				List<TriangulatorPoly> polygroup = it->get();
-				for(List<TriangulatorPoly>::Element *it2 = polygroup.front(); it2; it2 = it2->next()) {
-					this->begin(Mesh::PRIMITIVE_LINE_LOOP);
-					TriangulatorPoly poly = it2->get();
-					//if(poly.GetNumPoints() == 3) {
-					//	this->add_vertex(Vector3(poly[0].x*this->v2Scale.x, -(poly[0].y - this->nsvgImage->height)*this->v2Scale.y, 0.0f));
-					//	this->add_vertex(Vector3(poly[1].x*this->v2Scale.x, -(poly[1].y - this->nsvgImage->height)*this->v2Scale.y, 0.0f));
-					//	this->add_vertex(Vector3(poly[2].x*this->v2Scale.x, -(poly[2].y - this->nsvgImage->height)*this->v2Scale.y, 0.0f));
-					//}
-					for(int i=0; i<poly.GetNumPoints(); i++)
-						this->add_vertex(Vector3(poly[i].x*this->v2Scale.x, -(poly[i].y - this->nsvgImage->height)*this->v2Scale.y, 0.0f));
-					this->end();
+	if(this->iFrame < this->vFrameData.size() && this->vFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
+		this->clear();
+		for(std::vector<PVShape>::iterator shape = this->vFrameData[this->iFrame].shapes.begin(); shape != this->vFrameData[this->iFrame].shapes.end(); shape++) {
+			if(shape->indices[this->iCurveQuality].size() > 0) {
+				this->begin(Mesh::PRIMITIVE_TRIANGLES);
+				this->set_color(Color(1.0f, 1.0f, 0.0f));
+				for(std::vector<N>::iterator tris = shape->indices[this->iCurveQuality].begin(); tris != shape->indices[this->iCurveQuality].end(); tris++) {
+					this->add_vertex(Vector3(shape->vertices[this->iCurveQuality][*tris].x * this->v2Scale.x,
+						-(shape->vertices[this->iCurveQuality][*tris].y-this->nsvgImage->height) * this->v2Scale.y,
+						0.0f));
 				}
+				this->end();
 			}
-			for(List<TriangulatorPoly>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
-				TriangulatorPoly poly = it->get();
+			for(List<PoolVector2Array>::Element *it = shape->strokes[this->iCurveQuality].front(); it; it = it->next()) {
+				PoolVector2Array line = it->get();
+				PoolVector2Array::Read lineread = it->get().read();
 				this->begin(Mesh::PRIMITIVE_LINE_STRIP);
-				for(int pt = 0; pt < poly.GetNumPoints(); pt++) {
-					this->add_vertex(Vector3(poly[pt].x*this->v2Scale.x, -(poly[pt].y - this->nsvgImage->height)*this->v2Scale.y, 0.0f));
+				for(int pt = 0; pt < line.size(); pt++) {
+					this->add_vertex(Vector3(lineread[pt].x*this->v2Scale.x, -(lineread[pt].y - this->nsvgImage->height)*this->v2Scale.y, 0.0f));
 				}
 				this->end();
 			}
 		}
 	}
-#ifdef POLYVECTOR_DEBUG
+	#ifdef POLYVECTOR_DEBUG
 	if(debugtimer > 0)
 		printf("%s triangulated and rendered in %.6f seconds\n",
 			   this->sSvgFile.ascii().get_data(),
 			   (this->os->get_ticks_usec() - debugtimer) / 1000000.0L);
-	this->iDebugTimer = 0;
-#endif
+	#endif
 	return true;
 }
 
@@ -184,7 +168,7 @@ Vector2 PolyVector::get_vector_scale()
 
 void PolyVector::set_curve_quality(int t)
 {
-	this->iCurveQuality = CLAMP(t,0,9);
+	this->iCurveQuality = CLAMP(t, POLYVECTOR_MIN_QUALITY, POLYVECTOR_MAX_QUALITY);
 	this->triangulate_shapes();
 }
 int8_t PolyVector::get_curve_quality()

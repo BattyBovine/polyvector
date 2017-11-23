@@ -11,4 +11,4 @@ env_polyvector.add_source_files(env.modules_sources, "*.cpp")
 if ARGUMENTS.get('platform') == "windows":
 	env_polyvector.Append(CXXFLAGS = ['/EHsc'])
 if ARGUMENTS.get('platform') == "android":
-	env_polyvector.Append(CXXFLAGS = ['-std=c++11'])
+	env_polyvector.Append(CXXFLAGS = ['-std=c++14'])
