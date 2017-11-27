@@ -9,6 +9,7 @@
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
 
+#include "resource_importer_svg.h"
 #include "earcut.hpp/earcut.hpp"
 
 //#define POLYVECTOR_DEBUG
@@ -18,7 +19,6 @@
 #define POLYVECTOR_TESSELLATION_MAX_ANGLE 2.0f
 
 using Coord = float;
-using N = uint32_t;
 using Point = Vector2;
 namespace mapbox {
 namespace util {
@@ -30,39 +30,15 @@ template <> struct nth<1, Vector2> { inline static auto get(const Vector2 &v) { 
 class PolyVector : public ImmediateGeometry {
 	GDCLASS(PolyVector,ImmediateGeometry)
 
-private:
-	struct PVPath {
-		uint32_t id;
-		bool closed;
-		Color colour;
-		Curve2D curve;
-	};
-	struct PVShape {
-		uint32_t id;
-		Color colour;
-		std::vector<PVPath> paths;
-
-		std::map<int, std::vector<Vector2> > vertices;
-		std::map<int, std::vector<N> > indices;
-		std::map<int, List<PoolVector2Array> > strokes;
-
-		int size() { return paths.size(); }
-	};
-	struct PVFrame
-	{
-		std::vector<PVShape> shapes;
-		std::map<int, bool> triangulated;
-	};
-
 public:
 	PolyVector();
 	~PolyVector();
 
-	bool set_svg_image(String);
 	bool triangulate_shapes();
 	bool render_shapes(uint64_t debugtimer=0);
 
-	String get_svg_image();
+	void set_svg_image(const Ref<SVGBin>&);
+	Ref<SVGBin> get_svg_image() const;
 	void set_vector_scale(Vector2);
 	Vector2 get_vector_scale();
 	void set_curve_quality(int);
@@ -76,10 +52,10 @@ private:
 	OS *os;
 	#endif
 
-	String sSvgFile;
-	struct NSVGimage *nsvgImage;
+	Ref<SVGBin> dataSvgFile;
+	List<PolyVectorFrame> lFrameData;
+	Vector2 v2Dimensions;
 
-	std::vector<PVFrame> vFrameData;
 	uint16_t iFrame;
 	Vector2 v2Scale;
 	int8_t iCurveQuality;
