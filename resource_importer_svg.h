@@ -14,11 +14,11 @@ using N = uint32_t;
 class ResourceImporterSVG : public ResourceImporter {
 	GDCLASS(ResourceImporterSVG, ResourceImporter)
 public:
-	virtual String get_importer_name() const { return "BinarySVG"; }
-	virtual String get_visible_name() const { return "Binary SVG"; }
+	virtual String get_importer_name() const { return "RawSVG"; }
+	virtual String get_visible_name() const { return "Raw SVG"; }
 	virtual void get_recognized_extensions(List<String> *p_extensions) const { p_extensions->push_back("svg"); p_extensions->push_back("svgz"); }
-	virtual String get_save_extension() const { return "svgbin"; }
-	virtual String get_resource_type() const { return "BinarySVG"; }
+	virtual String get_save_extension() const { return "svgraw"; }
+	virtual String get_resource_type() const { return "RawSVG"; }
 	virtual bool get_option_visibility(const String &p_option, const Map<StringName, Variant> &p_options) const { return true; }
 	virtual int get_preset_count() const { return 0; }
 	virtual String get_preset_name(int p_idx) const { return String(); }
@@ -31,24 +31,25 @@ public:
 //#endif
 
 class ResourceLoaderSVG : public ResourceFormatLoader {
+	bool _is_clockwise(Curve2D*);
+
 public:
-	//virtual Ref<ResourceInteractiveLoader> load_interactive(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
 	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
-	virtual void get_recognized_extensions(List<String> *p_extensions) const { p_extensions->push_back("svgbin"); }
-	virtual String get_resource_type(const String &p_path) const { return "BinarySVG"; }
-	virtual bool handles_type(const String &p_type) const { return ( p_type == "BinarySVG" ); }
+	virtual void get_recognized_extensions(List<String> *p_extensions) const { p_extensions->push_back("svgraw"); }
+	virtual String get_resource_type(const String &p_path) const { return "RawSVG"; }
+	virtual bool handles_type(const String &p_type) const { return ( p_type == "RawSVG" ); }
 };
 
 struct PolyVectorPath {
 	uint32_t id;
 	bool closed;
-	Color colour;
+	bool hole;
 	Curve2D *curve;
 };
 struct PolyVectorShape {
 	uint32_t id;
-	Color colour;
 	List<PolyVectorPath> paths;
+	Color colour;
 
 	Map<int, std::vector<Vector2> > vertices;
 	Map<int, std::vector<N> > indices;
@@ -59,16 +60,16 @@ struct PolyVectorFrame {
 	Map<int, bool> triangulated;
 };
 
-class SVGBin : public Resource {
-	GDCLASS(SVGBin, Resource);
-	OBJ_SAVE_TYPE(SVGBin);
-	RES_BASE_EXTENSION("svgbin");
+class RawSVG : public Resource {
+	GDCLASS(RawSVG, Resource);
+	OBJ_SAVE_TYPE(RawSVG);
+	RES_BASE_EXTENSION("svgraw");
 
 	Vector2 dimensions;
 	List<PolyVectorFrame> frames;
 
 public:
-	SVGBin() {}
+	RawSVG() {}
 	void add_frame(PolyVectorFrame &p_data) { this->frames.push_back(p_data); }
 	List<PolyVectorFrame> &get_frames() { return this->frames; }
 	PolyVectorFrame &get_frame(int i) { return this->frames[i]; }

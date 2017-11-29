@@ -37,8 +37,8 @@ public:
 	bool triangulate_shapes();
 	bool render_shapes(uint64_t debugtimer=0);
 
-	void set_svg_image(const Ref<SVGBin>&);
-	Ref<SVGBin> get_svg_image() const;
+	void set_svg_image(const Ref<RawSVG>&);
+	Ref<RawSVG> get_svg_image() const;
 	void set_vector_scale(Vector2);
 	Vector2 get_vector_scale();
 	void set_curve_quality(int);
@@ -52,7 +52,7 @@ private:
 	OS *os;
 	#endif
 
-	Ref<SVGBin> dataSvgFile;
+	Ref<RawSVG> dataSvgFile;
 	List<PolyVectorFrame> lFrameData;
 	Vector2 v2Dimensions;
 

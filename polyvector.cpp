@@ -8,7 +8,7 @@ PolyVector::PolyVector()
 
 	this->iFrame = 0;
 	this->v2Scale = Vector2( 1.0f, 1.0f );
-	this->iCurveQuality = 3;
+	this->iCurveQuality = 2;
 }
 
 PolyVector::~PolyVector()
@@ -38,7 +38,7 @@ bool PolyVector::triangulate_shapes()
 					int tess_size = tess.size();
 					std::vector<Vector2> poly;
 					PoolVector2Array::Read tessreader = tess.read();
-					for(int i=0; i<tess_size-1; i++)
+					for(int i=1; i<tess_size; i++)
 						poly.push_back(tessreader[i]);
 					polygons.insert(polygons.begin(), poly);
 					shape.vertices[this->iCurveQuality].insert(shape.vertices[this->iCurveQuality].begin(), poly.begin(), poly.end());
@@ -65,10 +65,10 @@ bool PolyVector::render_shapes(uint64_t debugtimer)
 			PolyVectorShape shape = s->get();
 			if(shape.indices[this->iCurveQuality].size() > 0) {
 				this->begin(Mesh::PRIMITIVE_TRIANGLES);
-				this->set_color(Color(1.0f, 1.0f, 0.0f));
 				for(std::vector<N>::reverse_iterator tris = shape.indices[this->iCurveQuality].rbegin();
 					tris != shape.indices[this->iCurveQuality].rend();
 					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
+					this->set_color(shape.colour);
 					this->add_vertex(Vector3(shape.vertices[this->iCurveQuality][*tris].x * this->v2Scale.x,
 						shape.vertices[this->iCurveQuality][*tris].y * this->v2Scale.y,
 						0.0f));
@@ -99,7 +99,7 @@ bool PolyVector::render_shapes(uint64_t debugtimer)
 
 
 
-void PolyVector::set_svg_image(const Ref<SVGBin> &p_svg)
+void PolyVector::set_svg_image(const Ref<RawSVG> &p_svg)
 {
 	if(p_svg == this->dataSvgFile)	return;
 	this->dataSvgFile = p_svg;
@@ -111,7 +111,7 @@ void PolyVector::set_svg_image(const Ref<SVGBin> &p_svg)
 	this->v2Dimensions = this->dataSvgFile->get_dimensions();
 	this->triangulate_shapes();
 }
-Ref<SVGBin> PolyVector::get_svg_image() const
+Ref<RawSVG> PolyVector::get_svg_image() const
 {
 	return this->dataSvgFile;
 }
@@ -142,7 +142,7 @@ void PolyVector::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("set_svg_image"), &PolyVector::set_svg_image);
 	ClassDB::bind_method(D_METHOD("get_svg_image"), &PolyVector::get_svg_image);
-	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "SVG", PROPERTY_HINT_RESOURCE_TYPE, "BinarySVG"), "set_svg_image", "get_svg_image");
+	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "SVG", PROPERTY_HINT_RESOURCE_TYPE, "RawSVG"), "set_svg_image", "get_svg_image");
 
 	ClassDB::bind_method(D_METHOD("set_vector_scale"), &PolyVector::set_vector_scale);
 	ClassDB::bind_method(D_METHOD("get_vector_scale"), &PolyVector::get_vector_scale);
