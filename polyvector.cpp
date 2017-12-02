@@ -5,18 +5,24 @@ PolyVector::PolyVector()
 #ifdef POLYVECTOR_DEBUG
 	this->os = OS::get_singleton();
 #endif
-
 	this->iFrame = 0;
 	this->v2Scale = Vector2( 1.0f, 1.0f );
 	this->v2Offset = Vector2( 0.0f, 0.0f );
 	this->iCurveQuality = 2;
 	this->bZOrderOffset = true;
 	this->fLayerDepth = 0.0f;
+
+	Ref<SpatialMaterial> material;
+	material.instance();
+	material->set_flag(SpatialMaterial::FLAG_USE_VERTEX_LIGHTING, true);
+	material->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
+	material->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
+	material->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
+	this->set_material(material);
 }
 
 PolyVector::~PolyVector()
 {
-	this->clear();
 }
 
 
@@ -51,62 +57,59 @@ bool PolyVector::triangulate_shapes()
 		}
 		this->lFrameData[this->iFrame].triangulated[this->iCurveQuality] = true;
 		#ifdef POLYVECTOR_DEBUG
-		return this->render_shapes(debugtimer);
-		#else
-		return this->render_shapes();
+		if(debugtimer > 0)
+			printf("%s triangulated in %.6f seconds\n",
+				this->sSvgFile.ascii().get_data(),
+				( this->os->get_ticks_usec() - debugtimer ) / 1000000.0L);
 		#endif
+		return true;
 	} else {
 		return false;
 	}
 }
 
-bool PolyVector::render_shapes(uint64_t debugtimer)
+void PolyVector::_create_mesh_array(Array &p_arr) const
 {
-	List<Vector3> triangle;
-	Vector3 u,v;
+	PoolVector<Vector3> vertices;
+	PoolVector<Vector3> normals;
+	PoolVector<Color> colours;
+
 	if(this->iFrame < this->lFrameData.size() && this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
 		float depthoffset = 0.0f;
-		this->clear();
-		for(List<PolyVectorShape>::Element *s = this->lFrameData[this->iFrame].shapes.front(); s; s = s->next()) {
+		for(const List<PolyVectorShape>::Element *s = this->lFrameData[this->iFrame].shapes.front(); s; s = s->next()) {
 			PolyVectorShape shape = s->get();
 			if(shape.indices[this->iCurveQuality].size() > 0) {
-				this->begin(Mesh::PRIMITIVE_TRIANGLES);
 				for(std::vector<N>::reverse_iterator tris = shape.indices[this->iCurveQuality].rbegin();
 					tris != shape.indices[this->iCurveQuality].rend();
 					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
-					this->set_color(shape.fillcolour);
-					this->add_vertex(Vector3(
-						( shape.vertices[this->iCurveQuality][*tris].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
-						( shape.vertices[this->iCurveQuality][*tris].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+					colours.append(shape.fillcolour);
+					normals.append(Vector3(0.0f, 0.0f, 1.0f));
+					vertices.append(Vector3(
+						( shape.vertices[this->iCurveQuality][*tris].x * ( this->v2Scale.x/1000.0f ) ) + this->v2Offset.x,
+						( shape.vertices[this->iCurveQuality][*tris].y * ( this->v2Scale.y/1000.0f ) ) + this->v2Offset.y,
 						depthoffset));
 				}
-				this->end();
 			}
-			for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
-				PoolVector2Array line = it->get();
-				PoolVector2Array::Read lineread = it->get().read();
-				this->begin(Mesh::PRIMITIVE_LINE_STRIP);
-				for(int pt = 0; pt < line.size(); pt++) {
-					this->set_color(shape.strokecolour);
-					this->add_vertex(Vector3(
-						( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
-						( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
-						depthoffset));
-				}
-				this->end();
-			}
+			//for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
+			//	PoolVector2Array line = it->get();
+			//	PoolVector2Array::Read lineread = it->get().read();
+			//	this->begin(Mesh::PRIMITIVE_LINE_STRIP);
+			//	for(int pt = 0; pt < line.size(); pt++) {
+			//		this->set_color(shape.strokecolour);
+			//		this->add_vertex(Vector3(
+			//			( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
+			//			( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+			//			depthoffset));
+			//	}
+			//	this->end();
+			//}
 			if(this->bZOrderOffset)	depthoffset += this->fLayerDepth;
 		}
-	} else {
-		return this->triangulate_shapes();
 	}
-	#ifdef POLYVECTOR_DEBUG
-	if(debugtimer > 0)
-		printf("%s triangulated and rendered in %.6f seconds\n",
-			   this->sSvgFile.ascii().get_data(),
-			   (this->os->get_ticks_usec() - debugtimer) / 1000000.0L);
-	#endif
-	return true;
+
+	p_arr[VS::ARRAY_VERTEX] = vertices;
+	p_arr[VS::ARRAY_NORMAL] = normals;
+	p_arr[VS::ARRAY_COLOR] = colours;
 }
 
 
@@ -116,7 +119,6 @@ void PolyVector::set_svg_image(const Ref<RawSVG> &p_svg)
 	if(p_svg == this->dataSvgFile)	return;
 	this->dataSvgFile = p_svg;
 	if(this->dataSvgFile.is_null()) {
-		this->clear();
 		return;
 	}
 	this->lFrameData = this->dataSvgFile->get_frames();
@@ -131,7 +133,7 @@ Ref<RawSVG> PolyVector::get_svg_image() const
 void PolyVector::set_unit_scale(Vector2 s)
 {
 	this->v2Scale=s;
-	this->render_shapes();
+	this->_request_update();
 }
 Vector2 PolyVector::get_unit_scale()
 {
@@ -141,7 +143,8 @@ Vector2 PolyVector::get_unit_scale()
 void PolyVector::set_curve_quality(int t)
 {
 	this->iCurveQuality = CLAMP(t, POLYVECTOR_MIN_QUALITY, POLYVECTOR_MAX_QUALITY);
-	this->render_shapes();
+	this->triangulate_shapes();
+	this->_request_update();
 }
 int8_t PolyVector::get_curve_quality()
 {
@@ -151,7 +154,7 @@ int8_t PolyVector::get_curve_quality()
 void PolyVector::set_layer_separation(real_t d)
 {
 	this->fLayerDepth = d;
-	this->render_shapes();
+	this->_request_update();
 }
 real_t PolyVector::get_layer_separation()
 {
@@ -161,7 +164,7 @@ real_t PolyVector::get_layer_separation()
 void PolyVector::set_offset(Vector2 s)
 {
 	this->v2Offset=s;
-	this->render_shapes();
+	this->_request_update();
 }
 Vector2 PolyVector::get_offset()
 {

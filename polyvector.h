@@ -5,7 +5,8 @@
 #include <map>
 
 #include <core/os/os.h>
-#include <scene/3d/immediate_geometry.h>
+#include <scene/resources/primitive_meshes.h>
+#include <scene/3d/visual_instance.h>
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
 
@@ -27,15 +28,14 @@ template <> struct nth<1, Vector2> { inline static auto get(const Vector2 &v) { 
 }
 }
 
-class PolyVector : public ImmediateGeometry {
-	GDCLASS(PolyVector, ImmediateGeometry)
+class PolyVector : public PrimitiveMesh {
+	GDCLASS(PolyVector, PrimitiveMesh)
 
 public:
 	PolyVector();
 	~PolyVector();
 
 	bool triangulate_shapes();
-	bool render_shapes(uint64_t debugtimer=0);
 
 	void set_svg_image(const Ref<RawSVG>&);
 	Ref<RawSVG> get_svg_image() const;
@@ -48,7 +48,7 @@ public:
 	void set_offset(Vector2);
 	Vector2 get_offset();
 
-	AABB get_aabb() const { return ImmediateGeometry::get_aabb(); }
+	virtual void _create_mesh_array(Array&) const;
 
 protected:
 	static void _bind_methods();
