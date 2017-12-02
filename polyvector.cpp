@@ -8,7 +8,10 @@ PolyVector::PolyVector()
 
 	this->iFrame = 0;
 	this->v2Scale = Vector2( 1.0f, 1.0f );
+	this->v2Offset = Vector2( 0.0f, 0.0f );
 	this->iCurveQuality = 2;
+	this->bZOrderOffset = true;
+	this->fLayerDepth = 0.0f;
 }
 
 PolyVector::~PolyVector()
@@ -59,7 +62,10 @@ bool PolyVector::triangulate_shapes()
 
 bool PolyVector::render_shapes(uint64_t debugtimer)
 {
+	List<Vector3> triangle;
+	Vector3 u,v;
 	if(this->iFrame < this->lFrameData.size() && this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
+		float depthoffset = 0.0f;
 		this->clear();
 		for(List<PolyVectorShape>::Element *s = this->lFrameData[this->iFrame].shapes.front(); s; s = s->next()) {
 			PolyVectorShape shape = s->get();
@@ -68,10 +74,11 @@ bool PolyVector::render_shapes(uint64_t debugtimer)
 				for(std::vector<N>::reverse_iterator tris = shape.indices[this->iCurveQuality].rbegin();
 					tris != shape.indices[this->iCurveQuality].rend();
 					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
-					this->set_color(shape.colour);
-					this->add_vertex(Vector3(shape.vertices[this->iCurveQuality][*tris].x * this->v2Scale.x,
-						shape.vertices[this->iCurveQuality][*tris].y * this->v2Scale.y,
-						0.0f));
+					this->set_color(shape.fillcolour);
+					this->add_vertex(Vector3(
+						( shape.vertices[this->iCurveQuality][*tris].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
+						( shape.vertices[this->iCurveQuality][*tris].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+						depthoffset));
 				}
 				this->end();
 			}
@@ -80,10 +87,15 @@ bool PolyVector::render_shapes(uint64_t debugtimer)
 				PoolVector2Array::Read lineread = it->get().read();
 				this->begin(Mesh::PRIMITIVE_LINE_STRIP);
 				for(int pt = 0; pt < line.size(); pt++) {
-					this->add_vertex(Vector3(lineread[pt].x*this->v2Scale.x, lineread[pt].y*this->v2Scale.y, 0.0f));
+					this->set_color(shape.strokecolour);
+					this->add_vertex(Vector3(
+						( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
+						( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+						depthoffset));
 				}
 				this->end();
 			}
+			if(this->bZOrderOffset)	depthoffset += this->fLayerDepth;
 		}
 	} else {
 		return this->triangulate_shapes();
@@ -116,12 +128,12 @@ Ref<RawSVG> PolyVector::get_svg_image() const
 	return this->dataSvgFile;
 }
 
-void PolyVector::set_vector_scale(Vector2 s)
+void PolyVector::set_unit_scale(Vector2 s)
 {
 	this->v2Scale=s;
 	this->render_shapes();
 }
-Vector2 PolyVector::get_vector_scale()
+Vector2 PolyVector::get_unit_scale()
 {
 	return this->v2Scale;
 }
@@ -136,6 +148,26 @@ int8_t PolyVector::get_curve_quality()
 	return this->iCurveQuality;
 }
 
+void PolyVector::set_layer_separation(real_t d)
+{
+	this->fLayerDepth = d;
+	this->render_shapes();
+}
+real_t PolyVector::get_layer_separation()
+{
+	return this->fLayerDepth;
+}
+
+void PolyVector::set_offset(Vector2 s)
+{
+	this->v2Offset=s;
+	this->render_shapes();
+}
+Vector2 PolyVector::get_offset()
+{
+	return this->v2Offset;
+}
+
 
 
 void PolyVector::_bind_methods()
@@ -144,11 +176,20 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_svg_image"), &PolyVector::get_svg_image);
 	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "SVG", PROPERTY_HINT_RESOURCE_TYPE, "RawSVG"), "set_svg_image", "get_svg_image");
 
-	ClassDB::bind_method(D_METHOD("set_vector_scale"), &PolyVector::set_vector_scale);
-	ClassDB::bind_method(D_METHOD("get_vector_scale"), &PolyVector::get_vector_scale);
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "Vector Prescale"), "set_vector_scale", "get_vector_scale");
-
 	ClassDB::bind_method(D_METHOD("set_curve_quality"), &PolyVector::set_curve_quality);
 	ClassDB::bind_method(D_METHOD("get_curve_quality"), &PolyVector::get_curve_quality);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "Curve Quality"), "set_curve_quality", "get_curve_quality");
+
+	ADD_GROUP("Adjustments","");
+	ClassDB::bind_method(D_METHOD("set_offset"), &PolyVector::set_offset);
+	ClassDB::bind_method(D_METHOD("get_offset"), &PolyVector::get_offset);
+	ADD_PROPERTYNZ(PropertyInfo(Variant::VECTOR2, "Offset"), "set_offset", "get_offset");
+
+	ClassDB::bind_method(D_METHOD("set_unit_scale"), &PolyVector::set_unit_scale);
+	ClassDB::bind_method(D_METHOD("get_unit_scale"), &PolyVector::get_unit_scale);
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "Unit Scale"), "set_unit_scale", "get_unit_scale");
+
+	ClassDB::bind_method(D_METHOD("set_layer_separation"), &PolyVector::set_layer_separation);
+	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Layer Separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
 }

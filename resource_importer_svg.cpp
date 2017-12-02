@@ -52,10 +52,14 @@ RES ResourceLoaderSVG::load(const String &p_path, const String &p_original_path,
 	uint32_t shape_count = 0;
 	for(NSVGshape *shape = img->shapes; shape; shape = shape->next) {
 		PolyVectorShape shapedata;
-		shapedata.colour.r = ( (shape->fill.color) & 0x000000FF ) / 255.0f;
-		shapedata.colour.g = ( (shape->fill.color>>8) & 0x000000FF ) / 255.0f;
-		shapedata.colour.b = ( (shape->fill.color>>16) & 0x000000FF ) / 255.0f;
-		shapedata.colour.a = ( (shape->fill.color>>24) & 0x000000FF ) / 255.0f;
+		shapedata.fillcolour.r = ( (shape->fill.color) & 0x000000FF ) / 255.0f;
+		shapedata.fillcolour.g = ( (shape->fill.color>>8) & 0x000000FF ) / 255.0f;
+		shapedata.fillcolour.b = ( (shape->fill.color>>16) & 0x000000FF ) / 255.0f;
+		shapedata.fillcolour.a = ( (shape->fill.color>>24) & 0x000000FF ) / 255.0f;
+		shapedata.strokecolour.r = ( (shape->stroke.color) & 0x000000FF ) / 255.0f;
+		shapedata.strokecolour.g = ( (shape->stroke.color>>8) & 0x000000FF ) / 255.0f;
+		shapedata.strokecolour.b = ( (shape->stroke.color>>16) & 0x000000FF ) / 255.0f;
+		shapedata.strokecolour.a = ( (shape->stroke.color>>24) & 0x000000FF ) / 255.0f;
 		shapedata.id = shape_count;
 		uint32_t path_count = 0;
 		for(NSVGpath *path = shape->paths; path; path = path->next) {
@@ -70,7 +74,7 @@ RES ResourceLoaderSVG::load(const String &p_path, const String &p_original_path,
 					Vector2(p[2]-p[0], -(p[3]-p[1]))
 				);
 				for(int i = 0; i < ( path->npts/3 ); i++) {
-					p = &path->pts[( i*6 )+4];
+					p = &path->pts[(i*6)+4];
 					pathdata.curve->add_point(
 						Vector2(p[2], -p[3]),
 						Vector2(p[0]-p[2], -(p[1]-p[3])),
@@ -85,9 +89,6 @@ RES ResourceLoaderSVG::load(const String &p_path, const String &p_original_path,
 			path_count++;
 		}
 		shapedata.paths.back()->get().hole = false;		// Last shape is always a non-hole
-		for(int i=0; i<shapedata.paths.size(); i++)
-			printf("Curve %d:%d is %s; fill rule is %s\n", shapedata.id, shapedata.paths[i].id, shapedata.paths[i].hole ? "a hole" : "not a hole", shape->fillRule==1 ? "even-odd" : "non-zero");
-		shapedata.paths.back()->get().hole = false;
 		shapedata.vertices.clear();
 		shapedata.indices.clear();
 		shapedata.strokes.clear();

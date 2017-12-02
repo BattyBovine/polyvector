@@ -28,7 +28,7 @@ template <> struct nth<1, Vector2> { inline static auto get(const Vector2 &v) { 
 }
 
 class PolyVector : public ImmediateGeometry {
-	GDCLASS(PolyVector,ImmediateGeometry)
+	GDCLASS(PolyVector, ImmediateGeometry)
 
 public:
 	PolyVector();
@@ -39,10 +39,16 @@ public:
 
 	void set_svg_image(const Ref<RawSVG>&);
 	Ref<RawSVG> get_svg_image() const;
-	void set_vector_scale(Vector2);
-	Vector2 get_vector_scale();
+	void set_unit_scale(Vector2);
+	Vector2 get_unit_scale();
 	void set_curve_quality(int);
 	int8_t get_curve_quality();
+	void set_layer_separation(real_t);
+	real_t get_layer_separation();
+	void set_offset(Vector2);
+	Vector2 get_offset();
+
+	AABB get_aabb() const { return ImmediateGeometry::get_aabb(); }
 
 protected:
 	static void _bind_methods();
@@ -55,9 +61,11 @@ private:
 	Ref<RawSVG> dataSvgFile;
 	List<PolyVectorFrame> lFrameData;
 	Vector2 v2Dimensions;
+	bool bZOrderOffset;
+	real_t fLayerDepth;
 
 	uint16_t iFrame;
-	Vector2 v2Scale;
+	Vector2 v2Scale, v2Offset;
 	int8_t iCurveQuality;
 };
 

@@ -49,7 +49,8 @@ struct PolyVectorPath {
 struct PolyVectorShape {
 	uint32_t id;
 	List<PolyVectorPath> paths;
-	Color colour;
+	Color fillcolour;
+	Color strokecolour;
 
 	Map<int, std::vector<Vector2> > vertices;
 	Map<int, std::vector<N> > indices;
