@@ -5,8 +5,8 @@
 #include <map>
 
 #include <core/os/os.h>
-#include <scene/resources/primitive_meshes.h>
 #include <scene/3d/visual_instance.h>
+#include <scene/resources/surface_tool.h>
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
 
@@ -28,14 +28,15 @@ template <> struct nth<1, Vector2> { inline static auto get(const Vector2 &v) { 
 }
 }
 
-class PolyVector : public PrimitiveMesh {
-	GDCLASS(PolyVector, PrimitiveMesh)
+class PolyVector : public GeometryInstance {
+	GDCLASS(PolyVector, GeometryInstance)
 
 public:
 	PolyVector();
 	~PolyVector();
 
 	bool triangulate_shapes();
+	bool render_shapes();
 
 	void set_svg_image(const Ref<RawSVG>&);
 	Ref<RawSVG> get_svg_image() const;
@@ -48,7 +49,8 @@ public:
 	void set_offset(Vector2);
 	Vector2 get_offset();
 
-	virtual void _create_mesh_array(Array&) const;
+	virtual AABB get_aabb() const;
+	virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const;
 
 protected:
 	static void _bind_methods();
@@ -59,6 +61,11 @@ private:
 	#endif
 
 	Ref<RawSVG> dataSvgFile;
+	//Ref<SurfaceTool> stMeshBuilder;
+	Ref<Mesh> mCurrentMesh;
+	Ref<SpatialMaterial> smBaseMaterial;
+	AABB aabbBounds;
+
 	List<PolyVectorFrame> lFrameData;
 	Vector2 v2Dimensions;
 	bool bZOrderOffset;

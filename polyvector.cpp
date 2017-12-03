@@ -5,6 +5,9 @@ PolyVector::PolyVector()
 #ifdef POLYVECTOR_DEBUG
 	this->os = OS::get_singleton();
 #endif
+	this->aabbBounds.position = Vector3();
+	this->aabbBounds.size = Vector3();
+
 	this->iFrame = 0;
 	this->v2Scale = Vector2( 1.0f, 1.0f );
 	this->v2Offset = Vector2( 0.0f, 0.0f );
@@ -12,17 +15,17 @@ PolyVector::PolyVector()
 	this->bZOrderOffset = true;
 	this->fLayerDepth = 0.0f;
 
-	Ref<SpatialMaterial> material;
-	material.instance();
-	material->set_flag(SpatialMaterial::FLAG_USE_VERTEX_LIGHTING, true);
-	material->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
-	material->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
-	material->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
-	this->set_material(material);
+	this->smBaseMaterial.instance();
+	this->smBaseMaterial->set_flag(SpatialMaterial::FLAG_USE_VERTEX_LIGHTING, true);
+	this->smBaseMaterial->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
+	this->smBaseMaterial->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
+	this->smBaseMaterial->set_billboard_mode(SpatialMaterial::BILLBOARD_ENABLED);
+	this->smBaseMaterial->set_feature(SpatialMaterial::FEATURE_TRANSPARENT, true);
 }
 
 PolyVector::~PolyVector()
 {
+	this->smBaseMaterial.unref();
 }
 
 
@@ -62,32 +65,34 @@ bool PolyVector::triangulate_shapes()
 				this->sSvgFile.ascii().get_data(),
 				( this->os->get_ticks_usec() - debugtimer ) / 1000000.0L);
 		#endif
-		return true;
-	} else {
-		return false;
+		return this->render_shapes();
 	}
+	return false;
 }
 
-void PolyVector::_create_mesh_array(Array &p_arr) const
+bool PolyVector::render_shapes()
 {
-	PoolVector<Vector3> vertices;
-	PoolVector<Vector3> normals;
-	PoolVector<Color> colours;
+	this->aabbBounds.position = Vector3(this->v2Offset.x, this->v2Offset.y, 0.0f);
+	this->aabbBounds.size = Vector3();
 
 	if(this->iFrame < this->lFrameData.size() && this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
+		SurfaceTool meshbuilder;
+		meshbuilder.begin(Mesh::PRIMITIVE_TRIANGLES);
 		float depthoffset = 0.0f;
-		for(const List<PolyVectorShape>::Element *s = this->lFrameData[this->iFrame].shapes.front(); s; s = s->next()) {
+		for(List<PolyVectorShape>::Element *s = this->lFrameData[this->iFrame].shapes.front(); s; s = s->next()) {
 			PolyVectorShape shape = s->get();
+			meshbuilder.add_color(shape.fillcolour);
+			meshbuilder.add_normal(Vector3(0.0f, 0.0f, 1.0f));
 			if(shape.indices[this->iCurveQuality].size() > 0) {
 				for(std::vector<N>::reverse_iterator tris = shape.indices[this->iCurveQuality].rbegin();
 					tris != shape.indices[this->iCurveQuality].rend();
 					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
-					colours.append(shape.fillcolour);
-					normals.append(Vector3(0.0f, 0.0f, 1.0f));
-					vertices.append(Vector3(
+					Vector3 p(
 						( shape.vertices[this->iCurveQuality][*tris].x * ( this->v2Scale.x/1000.0f ) ) + this->v2Offset.x,
 						( shape.vertices[this->iCurveQuality][*tris].y * ( this->v2Scale.y/1000.0f ) ) + this->v2Offset.y,
-						depthoffset));
+						depthoffset);
+					meshbuilder.add_vertex(p);
+					this->aabbBounds.expand_to(p);
 				}
 			}
 			//for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
@@ -105,11 +110,13 @@ void PolyVector::_create_mesh_array(Array &p_arr) const
 			//}
 			if(this->bZOrderOffset)	depthoffset += this->fLayerDepth;
 		}
+		meshbuilder.set_material(this->smBaseMaterial);
+		meshbuilder.index();
+		this->mCurrentMesh.unref();
+		this->mCurrentMesh = meshbuilder.commit();
+		this->set_base(this->mCurrentMesh->get_rid());
 	}
-
-	p_arr[VS::ARRAY_VERTEX] = vertices;
-	p_arr[VS::ARRAY_NORMAL] = normals;
-	p_arr[VS::ARRAY_COLOR] = colours;
+	return true;
 }
 
 
@@ -133,7 +140,7 @@ Ref<RawSVG> PolyVector::get_svg_image() const
 void PolyVector::set_unit_scale(Vector2 s)
 {
 	this->v2Scale=s;
-	this->_request_update();
+	this->render_shapes();
 }
 Vector2 PolyVector::get_unit_scale()
 {
@@ -144,7 +151,7 @@ void PolyVector::set_curve_quality(int t)
 {
 	this->iCurveQuality = CLAMP(t, POLYVECTOR_MIN_QUALITY, POLYVECTOR_MAX_QUALITY);
 	this->triangulate_shapes();
-	this->_request_update();
+	this->render_shapes();
 }
 int8_t PolyVector::get_curve_quality()
 {
@@ -154,7 +161,7 @@ int8_t PolyVector::get_curve_quality()
 void PolyVector::set_layer_separation(real_t d)
 {
 	this->fLayerDepth = d;
-	this->_request_update();
+	this->render_shapes();
 }
 real_t PolyVector::get_layer_separation()
 {
@@ -164,11 +171,23 @@ real_t PolyVector::get_layer_separation()
 void PolyVector::set_offset(Vector2 s)
 {
 	this->v2Offset=s;
-	this->_request_update();
+	this->render_shapes();
 }
 Vector2 PolyVector::get_offset()
 {
 	return this->v2Offset;
+}
+
+AABB PolyVector::get_aabb() const
+{
+	return this->aabbBounds;
+}
+
+PoolVector<Face3> PolyVector::get_faces(uint32_t p_usage_flags) const
+{
+	if(!( p_usage_flags & ( FACES_SOLID | FACES_ENCLOSING ) ) ||
+		this->mCurrentMesh.is_null())	return PoolVector<Face3>();
+	return this->mCurrentMesh->get_faces();
 }
 
 
