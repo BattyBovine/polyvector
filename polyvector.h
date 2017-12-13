@@ -49,8 +49,8 @@ public:
 	real_t get_layer_separation();
 	void set_material_unshaded(bool);
 	bool get_material_unshaded();
-	void set_billboard(bool);
-	bool get_billboard();
+	void set_billboard(int);
+	int get_billboard();
 
 protected:
 	static void _bind_methods();

@@ -177,14 +177,14 @@ bool PolyVector::get_material_unshaded()
 	return this->materialDefault->get_flag(SpatialMaterial::FLAG_UNSHADED);
 }
 
-void PolyVector::set_billboard(bool b)
+void PolyVector::set_billboard(int b)
 {
-	this->materialDefault->set_billboard_mode(b ? SpatialMaterial::BILLBOARD_ENABLED : SpatialMaterial::BILLBOARD_DISABLED);
+	this->materialDefault->set_billboard_mode((SpatialMaterial::BillboardMode)b);
 	this->set_material_override(this->materialDefault);
 }
-bool PolyVector::get_billboard()
+int PolyVector::get_billboard()
 {
-	return (this->materialDefault->get_billboard_mode()==SpatialMaterial::BILLBOARD_ENABLED);
+	return (this->materialDefault->get_billboard_mode());
 }
 
 
@@ -206,7 +206,7 @@ void PolyVector::_bind_methods()
 
 	ClassDB::bind_method(D_METHOD("set_billboard"), &PolyVector::set_billboard);
 	ClassDB::bind_method(D_METHOD("get_billboard"), &PolyVector::get_billboard);
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "Billboard"), "set_billboard", "get_billboard");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "Billboard", PROPERTY_HINT_ENUM, "Disabled,Enabled,Y-Billboard,Particle"), "set_billboard", "get_billboard");
 
 	ADD_GROUP("Adjustments","");
 	ClassDB::bind_method(D_METHOD("set_offset"), &PolyVector::set_offset);
