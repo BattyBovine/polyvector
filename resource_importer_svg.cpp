@@ -64,31 +64,30 @@ RES ResourceLoaderSVG::load(const String &p_path, const String &p_original_path,
 		uint32_t path_count = 0;
 		for(NSVGpath *path = shape->paths; path; path = path->next) {
 			PolyVectorPath pathdata;
-			pathdata.closed = path->closed;
-			pathdata.curve = new Curve2D();
 			if(path->npts > 0) {
 				float *p = &path->pts[0];
-				pathdata.curve->add_point(
+				pathdata.curve.add_point(
 					Vector2(p[0], -p[1]),
 					Vector2(0.0f, 0.0f),
 					Vector2(p[2]-p[0], -(p[3]-p[1]))
 				);
 				for(int i = 0; i < ( path->npts/3 ); i++) {
 					p = &path->pts[(i*6)+4];
-					pathdata.curve->add_point(
+					pathdata.curve.add_point(
 						Vector2(p[2], -p[3]),
 						Vector2(p[0]-p[2], -(p[1]-p[3])),
 						Vector2(p[4]-p[2], -(p[5]-p[3]))
 					);
 				}
 			}
+			pathdata.closed = path->closed;
+			pathdata.id = path_count;
 			if(path->closed)	pathdata.hole = this->_is_clockwise(pathdata.curve);
 			else				pathdata.hole = false;
-			pathdata.id = path_count;
 			shapedata.paths.push_back(pathdata);
 			path_count++;
 		}
-		shapedata.paths.back()->get().hole = false;		// Last shape is always a non-hole
+		shapedata.paths.back().hole = false;		// Last shape is always a non-hole
 		shapedata.vertices.clear();
 		shapedata.indices.clear();
 		shapedata.strokes.clear();
@@ -107,16 +106,16 @@ RES ResourceLoaderSVG::load(const String &p_path, const String &p_original_path,
 	return rawsvg;
 }
 
-bool ResourceLoaderSVG::_is_clockwise(Curve2D *c)
+bool ResourceLoaderSVG::_is_clockwise(Curve2D c)
 {
-	if(c->get_point_count() < 3)	return false;
-	N pointcount = c->get_point_count();
+	if(c.get_point_count() < 3)	return false;
+	N pointcount = c.get_point_count();
 	int area = 0;
-	Vector2 p0 = c->get_point_position(0);
-	Vector2 pn = c->get_point_position(pointcount-1);
+	Vector2 p0 = c.get_point_position(0);
+	Vector2 pn = c.get_point_position(pointcount-1);
 	for(N i=1; i<pointcount; i++) {
-		Vector2 p1 = c->get_point_position(i);
-		Vector2 p2 = c->get_point_position(i-1);
+		Vector2 p1 = c.get_point_position(i);
+		Vector2 p2 = c.get_point_position(i-1);
 		area += ( p1.x - p2.x ) * ( p1.y + p2.y );
 	}
 	area += ( p0.x - pn.x ) * ( p0.y + pn.y );

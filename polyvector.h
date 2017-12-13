@@ -5,8 +5,7 @@
 #include <map>
 
 #include <core/os/os.h>
-#include <scene/3d/visual_instance.h>
-#include <scene/resources/surface_tool.h>
+#include <scene/3d/immediate_geometry.h>
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
 
@@ -28,8 +27,8 @@ template <> struct nth<1, Vector2> { inline static auto get(const Vector2 &v) { 
 }
 }
 
-class PolyVector : public GeometryInstance {
-	GDCLASS(PolyVector, GeometryInstance)
+class PolyVector : public ImmediateGeometry {
+	GDCLASS(PolyVector, ImmediateGeometry)
 
 public:
 	PolyVector();
@@ -44,13 +43,14 @@ public:
 	Vector2 get_unit_scale();
 	void set_curve_quality(int);
 	int8_t get_curve_quality();
-	void set_layer_separation(real_t);
-	real_t get_layer_separation();
 	void set_offset(Vector2);
 	Vector2 get_offset();
-
-	virtual AABB get_aabb() const;
-	virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const;
+	void set_layer_separation(real_t);
+	real_t get_layer_separation();
+	void set_material_unshaded(bool);
+	bool get_material_unshaded();
+	void set_billboard(bool);
+	bool get_billboard();
 
 protected:
 	static void _bind_methods();
@@ -61,11 +61,7 @@ private:
 	#endif
 
 	Ref<RawSVG> dataSvgFile;
-	//Ref<SurfaceTool> stMeshBuilder;
-	Ref<Mesh> mCurrentMesh;
-	Ref<SpatialMaterial> smBaseMaterial;
-	AABB aabbBounds;
-
+	Ref<SpatialMaterial> materialDefault;
 	List<PolyVectorFrame> lFrameData;
 	Vector2 v2Dimensions;
 	bool bZOrderOffset;

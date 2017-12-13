@@ -2,6 +2,7 @@
 #define RESOURCE_IMPORTER_SVG_H_f6e3a78cd13111e78941cec278b6b50a
 
 #include <vector>
+#include <list>
 #include <io/resource_import.h>
 #include <io/resource_loader.h>
 #include <io/resource_saver.h>
@@ -31,7 +32,7 @@ public:
 //#endif
 
 class ResourceLoaderSVG : public ResourceFormatLoader {
-	bool _is_clockwise(Curve2D*);
+	bool _is_clockwise(Curve2D);
 
 public:
 	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
@@ -41,14 +42,14 @@ public:
 };
 
 struct PolyVectorPath {
-	uint32_t id;
+	uint16_t id;
 	bool closed;
 	bool hole;
-	Curve2D *curve;
+	Curve2D curve;
 };
 struct PolyVectorShape {
-	uint32_t id;
-	List<PolyVectorPath> paths;
+	uint16_t id;
+	std::list<PolyVectorPath> paths;
 	Color fillcolour;
 	Color strokecolour;
 
