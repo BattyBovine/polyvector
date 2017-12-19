@@ -5,8 +5,11 @@ Import('env_modules')
 
 env_polyvector = env_modules.Clone()
 
-# Godot's own source files
+env_polyvector.Append(CPPPATH=['#modules/polyvector/libshockwave/lzma/'])
+
 env_polyvector.add_source_files(env.modules_sources, "*.cpp")
+env_polyvector.add_source_files(env.modules_sources, "libshockwave/*.cpp")
+env_polyvector.add_source_files(env.modules_sources, "libshockwave/lzma/*.c")
 
 if ARGUMENTS.get('platform') == "windows":
 	env_polyvector.Append(CXXFLAGS = ['/EHsc'])

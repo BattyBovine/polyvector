@@ -1,0 +1,4 @@
+[submodule "libshockwave"]
+	path = libshockwave
+	url = git@github.com:BattyBovine/libshockwave.git
+	branch = master
