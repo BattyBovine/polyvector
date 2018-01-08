@@ -9,13 +9,9 @@
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
 
-#include "resource_importer_svg.h"
+#include "resource_importer_svg_swf.h"
 #include "earcut.hpp/earcut.hpp"
 
-//#define POLYVECTOR_DEBUG
-
-#define POLYVECTOR_MIN_QUALITY 0
-#define POLYVECTOR_MAX_QUALITY 9
 #define POLYVECTOR_TESSELLATION_MAX_ANGLE 2.0f
 
 using Coord = float;
@@ -37,8 +33,8 @@ public:
 	bool triangulate_shapes();
 	bool render_shapes();
 
-	void set_svg_image(const Ref<RawSVG>&);
-	Ref<RawSVG> get_svg_image() const;
+	void set_vector_image(const Ref<JSONVector>&);
+	Ref<JSONVector> get_vector_image() const;
 	void set_unit_scale(Vector2);
 	Vector2 get_unit_scale();
 	void set_curve_quality(int);
@@ -60,7 +56,7 @@ private:
 	OS *os;
 	#endif
 
-	Ref<RawSVG> dataSvgFile;
+	Ref<JSONVector> dataVectorFile;
 	Ref<SpatialMaterial> materialDefault;
 	List<PolyVectorFrame> lFrameData;
 	Vector2 v2Dimensions;
