@@ -35,7 +35,7 @@ public:
 
 	void set_vector_image(const Ref<JSONVector>&);
 	Ref<JSONVector> get_vector_image() const;
-	void set_frame(uint16_t);
+	void set_frame(int32_t);
 	uint16_t get_frame();
 	void set_curve_quality(int);
 	int8_t get_curve_quality();
@@ -65,7 +65,7 @@ private:
 	bool bZOrderOffset;
 	real_t fLayerDepth;
 
-	uint16_t iFrame;
+	int32_t iFrame;
 	Vector2 v2Scale, v2Offset;
 	int8_t iCurveQuality;
 };

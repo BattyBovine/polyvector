@@ -130,14 +130,14 @@ Ref<JSONVector> PolyVector::get_vector_image() const
 	return this->dataVectorFile;
 }
 
-void PolyVector::set_frame(uint16_t f)
+void PolyVector::set_frame(int32_t f)
 {
-	this->iFrame = CLAMP(f,0,this->lFrameData.size());
+	this->iFrame = CLAMP(f,1,this->lFrameData.size())-1;
 	this->triangulate_shapes();
 }
 uint16_t PolyVector::get_frame()
 {
-	return this->iFrame;
+	return this->iFrame+1;
 }
 
 void PolyVector::set_curve_quality(int t)
@@ -210,7 +210,7 @@ void PolyVector::_bind_methods()
 
 	ClassDB::bind_method(D_METHOD("set_frame"), &PolyVector::set_frame);
 	ClassDB::bind_method(D_METHOD("get_frame"), &PolyVector::get_frame);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "Frame"), "set_frame", "get_frame");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "Frame", PROPERTY_HINT_RANGE, "1,65535,1,1"), "set_frame", "get_frame");
 
 	ClassDB::bind_method(D_METHOD("set_curve_quality"), &PolyVector::set_curve_quality);
 	ClassDB::bind_method(D_METHOD("get_curve_quality"), &PolyVector::get_curve_quality);
