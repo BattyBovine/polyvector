@@ -61,32 +61,44 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 		json root;
 		std::map<uint16_t, uint16_t> fillstylemap, linestylemap, charactermap;
 		{	// Build the library definitions first
-			for(SWF::FillStyleArray::iterator fs = dict->FillStyles.begin(); fs != dict->FillStyles.end(); fs++) {
-				SWF::FillStyle fillstyle = *fs;
-				if(fillstyle.StyleType==SWF::FillStyle::Type::SOLID) {
-					fillstylemap[fs-dict->FillStyles.begin()+1] = fillstylemap.size()+1;
+			for(SWF::FillStyleMap::iterator fsm=dict->FillStyles.begin(); fsm!=dict->FillStyles.end(); fsm++) {
+				json fillstylearray;
+				for(SWF::FillStyleArray::iterator fs=fsm->second.begin(); fs!=fsm->second.end(); fs++) {
+					SWF::FillStyle fillstyle = *fs;
+					fillstylemap[fs-fsm->second.begin()+1] = fillstylemap.size()+1;
 					json fillstyledef;
-					fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.r;
-					fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.g;
-					fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.b;
-					if(fillstyle.Color.a < 255)
-						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.a;
-					root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES] += fillstyledef;
+					if(fillstyle.StyleType==SWF::FillStyle::Type::SOLID) {
+						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.r;
+						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.g;
+						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.b;
+						if(fillstyle.Color.a < 255)
+							fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.a;
+					} else {	// Placeholder for unsupported fill types
+						fillstyledef[PV_JSON_NAME_COLOUR] += 0;
+						fillstyledef[PV_JSON_NAME_COLOUR] += 0;
+						fillstyledef[PV_JSON_NAME_COLOUR] += 0;
+					}
+					fillstylearray += fillstyledef;
 				}
+				root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES] += fillstylearray;
 			}
-			for(SWF::LineStyleArray::iterator ls = dict->LineStyles.begin(); ls != dict->LineStyles.end(); ls++) {
-				SWF::LineStyle linestyle = *ls;
-				if(linestyle.Width>0.0f) {
-					linestylemap[ls-dict->LineStyles.begin()+1] = linestylemap.size()+1;
-					json linestyledef;
-					linestyledef[PV_JSON_NAME_LINEWIDTH] = bool(p_options["binary"]) ? linestyle.Width : double(round(linestyle.Width*100)/100.0L);
-					linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.r;
-					linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.g;
-					linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.b;
-					if(linestyle.Color.a < 255)
-						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.a;
-					root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES] += linestyledef;
+			for(SWF::LineStyleMap::iterator lsm=dict->LineStyles.begin(); lsm!=dict->LineStyles.end(); lsm++) {
+				json linestylearray;
+				for(SWF::LineStyleArray::iterator ls=lsm->second.begin(); ls!=lsm->second.end(); ls++) {
+					SWF::LineStyle linestyle = *ls;
+					if(linestyle.Width>0.0f) {
+						linestylemap[ls-lsm->second.begin()+1] = linestylemap.size()+1;
+						json linestyledef;
+						linestyledef[PV_JSON_NAME_LINEWIDTH] = bool(p_options["binary"]) ? linestyle.Width : double(round(linestyle.Width*100)/100.0L);
+						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.r;
+						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.g;
+						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.b;
+						if(linestyle.Color.a < 255)
+							linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.a;
+						linestylearray += linestyledef;
+					}
 				}
+				root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES] += linestylearray;
 			}
 			for(SWF::CharacterDict::iterator cd = dict->CharacterList.begin(); cd != dict->CharacterList.end(); cd++) {
 				uint16_t characterid = cd->first;
@@ -356,13 +368,13 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 				json jshape = *jci;
 				uint16_t jshapefill = jshape[PV_JSON_NAME_FILL];
 				if(jshapefill>0) {
-					json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES][jshapefill-1][PV_JSON_NAME_COLOUR];
+					json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES][characterid][jshapefill-1][PV_JSON_NAME_COLOUR];
 					pvshape.fillcolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
 					if(jcolour.size()>3)	pvshape.fillcolour.a = jcolour[3]/255.0f;
 				}
 				uint16_t jshapestroke = jshape[PV_JSON_NAME_STROKE];
 				if(jshapestroke>0) {
-					json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES][jshapestroke-1][PV_JSON_NAME_COLOUR];
+					json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES][characterid][jshapestroke-1][PV_JSON_NAME_COLOUR];
 					pvshape.strokecolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
 					if(jcolour.size()>3)	pvshape.strokecolour.a = jcolour[3]/255.0f;
 				}
