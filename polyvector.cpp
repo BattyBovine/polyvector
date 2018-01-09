@@ -68,9 +68,8 @@ bool PolyVector::triangulate_shapes()
 				this->sSvgFile.ascii().get_data(),
 				( this->os->get_ticks_usec() - debugtimer ) / 1000000.0L);
 		#endif
-		return this->render_shapes();
 	}
-	return false;
+	return this->render_shapes();
 }
 
 bool PolyVector::render_shapes()
@@ -131,6 +130,26 @@ Ref<JSONVector> PolyVector::get_vector_image() const
 	return this->dataVectorFile;
 }
 
+void PolyVector::set_frame(uint16_t f)
+{
+	this->iFrame = CLAMP(f,0,this->lFrameData.size());
+	this->triangulate_shapes();
+}
+uint16_t PolyVector::get_frame()
+{
+	return this->iFrame;
+}
+
+void PolyVector::set_curve_quality(int t)
+{
+	this->iCurveQuality = t;
+	this->triangulate_shapes();
+}
+int8_t PolyVector::get_curve_quality()
+{
+	return this->iCurveQuality;
+}
+
 void PolyVector::set_unit_scale(Vector2 s)
 {
 	this->v2Scale=s;
@@ -139,17 +158,6 @@ void PolyVector::set_unit_scale(Vector2 s)
 Vector2 PolyVector::get_unit_scale()
 {
 	return this->v2Scale;
-}
-
-void PolyVector::set_curve_quality(int t)
-{
-	this->iCurveQuality = t;
-	this->triangulate_shapes();
-	this->render_shapes();
-}
-int8_t PolyVector::get_curve_quality()
-{
-	return this->iCurveQuality;
 }
 
 void PolyVector::set_offset(Vector2 s)
@@ -199,6 +207,10 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_vector_image"), &PolyVector::set_vector_image);
 	ClassDB::bind_method(D_METHOD("get_vector_image"), &PolyVector::get_vector_image);
 	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "Vector", PROPERTY_HINT_RESOURCE_TYPE, "JSONVector"), "set_vector_image", "get_vector_image");
+
+	ClassDB::bind_method(D_METHOD("set_frame"), &PolyVector::set_frame);
+	ClassDB::bind_method(D_METHOD("get_frame"), &PolyVector::get_frame);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "Frame"), "set_frame", "get_frame");
 
 	ClassDB::bind_method(D_METHOD("set_curve_quality"), &PolyVector::set_curve_quality);
 	ClassDB::bind_method(D_METHOD("get_curve_quality"), &PolyVector::get_curve_quality);

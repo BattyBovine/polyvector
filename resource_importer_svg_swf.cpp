@@ -362,6 +362,19 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 		for(json::iterator jdli = jdisplaylist.begin(); jdli != jdisplaylist.end(); jdli++) {
 			json jdisplayitem = *jdli;
 			uint16_t characterid = jdisplayitem[PV_JSON_NAME_ID];
+			PolyVectorMatrix chartransform;
+			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=2) {
+				chartransform.TranslateX = jdisplayitem[PV_JSON_NAME_TRANSFORM][0];
+				chartransform.TranslateY = jdisplayitem[PV_JSON_NAME_TRANSFORM][1];
+			}
+			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=4) {
+				chartransform.Skew0 = jdisplayitem[PV_JSON_NAME_TRANSFORM][2];
+				chartransform.Skew1 = jdisplayitem[PV_JSON_NAME_TRANSFORM][3];
+			}
+			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=6) {
+				chartransform.ScaleX = jdisplayitem[PV_JSON_NAME_TRANSFORM][4];
+				chartransform.ScaleY = jdisplayitem[PV_JSON_NAME_TRANSFORM][5];
+			}
 			json jchar = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_CHARACTERS][characterid];
 			for(json::iterator jci = jchar.begin(); jci != jchar.end(); jci++) {
 				PolyVectorShape pvshape;
@@ -378,11 +391,11 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 					pvshape.strokecolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
 					if(jcolour.size()>3)	pvshape.strokecolour.a = jcolour[3]/255.0f;
 				}
-				PolyVectorPath pvpath = this->verts_to_curve(jshape[PV_JSON_NAME_VERTICES]);
+				PolyVectorPath pvpath = this->verts_to_curve(jshape[PV_JSON_NAME_VERTICES], chartransform);
 				pvpath.closed = jshape[PV_JSON_NAME_CLOSED];
 				pvshape.path = pvpath;
 				for(json::iterator jhv=jshape[PV_JSON_NAME_HOLES].begin(); jhv!=jshape[PV_JSON_NAME_HOLES].end(); jhv++) {
-					pvshape.holes.push_back(this->verts_to_curve(*jhv));
+					pvshape.holes.push_back(this->verts_to_curve(*jhv, chartransform));
 				}
 				frame.shapes.push_back(pvshape);
 			}
@@ -395,16 +408,19 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 	return vectordata;
 }
 
-PolyVectorPath ResourceLoaderJSONVector::verts_to_curve(json jverts)
+PolyVectorPath ResourceLoaderJSONVector::verts_to_curve(json jverts, PolyVectorMatrix transform)
 {
 	PolyVectorPath pvpath;
 	if(jverts.size()>2) {
 		Vector2 inctrldelta, outctrldelta, quadcontrol;
-		Vector2 anchor(jverts[0], -float(jverts[1]));
+		Vector2 anchor(
+			(float(jverts[0])*transform.ScaleX+float(jverts[1])*transform.Skew1+transform.TranslateX),
+			-(float(jverts[0])*transform.Skew0+float(jverts[1])*transform.ScaleY+transform.TranslateY)
+		);
 		Vector2 firstanchor = anchor;
-		for(json::iterator jvi = jverts.begin()+2; jvi != jverts.end(); jvi++) {
+		for(json::iterator jvi=jverts.begin()+2; jvi!=jverts.end(); jvi++) {
 			float vert = *jvi;
-			switch(( ( jvi-jverts.begin()+2 )%4 )) {
+			switch(((jvi-jverts.begin()+2)%4)) {
 				case 0:
 				{
 					quadcontrol.x = vert;
@@ -412,8 +428,9 @@ PolyVectorPath ResourceLoaderJSONVector::verts_to_curve(json jverts)
 				}
 				case 1:
 				{
-					quadcontrol.y = -vert;
-					outctrldelta = ( quadcontrol-anchor )*( 2.0f/3.0f );
+					quadcontrol.y = -(quadcontrol.x*transform.Skew0+vert*transform.ScaleY+transform.TranslateY);
+					quadcontrol.x = (quadcontrol.x*transform.ScaleX+vert*transform.Skew1+transform.TranslateX);
+					outctrldelta = (quadcontrol-anchor)*(2.0f/3.0f);
 					pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
 					break;
 				}
@@ -424,16 +441,17 @@ PolyVectorPath ResourceLoaderJSONVector::verts_to_curve(json jverts)
 				}
 				case 3:
 				{
-					anchor.y = -vert;
-					inctrldelta = ( quadcontrol-anchor )*( 2.0f/3.0f );
+					anchor.y = -(anchor.x*transform.Skew0+vert*transform.ScaleY+transform.TranslateY);
+					anchor.x = (anchor.x*transform.ScaleX+vert*transform.Skew1+transform.TranslateX);
+					inctrldelta = (quadcontrol-anchor)*(2.0f/3.0f);
 					break;
 				}
 			}
 		}
 		if(pvpath.closed) {
 			pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
-			inctrldelta = ( quadcontrol-firstanchor )*( 2.0f/3.0f );
-			pvpath.curve.add_point(firstanchor, inctrldelta, Vector2(0, 0));
+			inctrldelta = (quadcontrol-firstanchor)*(2.0f/3.0f);
+			pvpath.curve.add_point(firstanchor, inctrldelta, Vector2(0,0));
 		}
 	}
 	return pvpath;

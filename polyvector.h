@@ -35,10 +35,12 @@ public:
 
 	void set_vector_image(const Ref<JSONVector>&);
 	Ref<JSONVector> get_vector_image() const;
-	void set_unit_scale(Vector2);
-	Vector2 get_unit_scale();
+	void set_frame(uint16_t);
+	uint16_t get_frame();
 	void set_curve_quality(int);
 	int8_t get_curve_quality();
+	void set_unit_scale(Vector2);
+	Vector2 get_unit_scale();
 	void set_offset(Vector2);
 	Vector2 get_offset();
 	void set_layer_separation(real_t);

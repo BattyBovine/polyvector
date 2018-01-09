@@ -16,6 +16,15 @@ using json = nlohmann::json;
 
 #include "libshockwave/swfparser.h"
 
+struct PolyVectorMatrix
+{
+	float TranslateX = 0.0f;
+	float TranslateY = 0.0f;
+	float Skew0 = 0.0f;
+	float Skew1 = 0.0f;
+	float ScaleX = 1.0f;
+	float ScaleY = 1.0f;
+};
 struct PolyVectorPath
 {
 	bool closed;
@@ -38,6 +47,10 @@ struct PolyVectorShape
 	Map<int, List<PoolVector2Array> > strokes;
 	Map<int, std::vector<Vector2> > vertices;
 	Map<int, std::vector<N> > indices;
+};
+struct PolyVectorCharacter
+{
+	std::list<PolyVectorShape> shapes;
 };
 struct PolyVectorFrame
 {
@@ -100,7 +113,7 @@ public:
 	virtual String get_resource_type(const String &p_path) const { return "JSONVector"; }
 	virtual bool handles_type(const String &p_type) const { return (p_type=="JSONVector"); }
 private:
-	PolyVectorPath verts_to_curve(json);
+	PolyVectorPath verts_to_curve(json, PolyVectorMatrix);
 };
 
 //class ResourceLoaderSVG : public ResourceFormatLoader
