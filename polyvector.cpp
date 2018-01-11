@@ -2,9 +2,6 @@
 
 PolyVector::PolyVector()
 {
-#ifdef POLYVECTOR_DEBUG
-	this->os = OS::get_singleton();
-#endif
 	this->iFrame = 0;
 	this->v2Scale = Vector2( 1.0f, 1.0f );
 	this->v2Offset = Vector2( 0.0f, 0.0f );
@@ -16,6 +13,11 @@ PolyVector::PolyVector()
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
 	this->set_material_override(this->materialDefault);
+
+	#ifdef POLYVECTOR_DEBUG
+	this->os = OS::get_singleton();
+	this->triangulation_time = 0.0L;
+	#endif
 }
 
 PolyVector::~PolyVector()
@@ -28,11 +30,10 @@ PolyVector::~PolyVector()
 
 bool PolyVector::triangulate_shapes()
 {
-	#ifdef POLYVECTOR_DEBUG
-	uint64_t debugtimer = this->os->get_ticks_usec();
-	#endif
-
 	if(this->iFrame < this->lFrameData.size() && !this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
+		#ifdef POLYVECTOR_DEBUG
+		uint64_t debugtimer = this->os->get_ticks_usec();
+		#endif
 		for(std::list<PolyVectorShape>::iterator s=this->lFrameData[this->iFrame].shapes.begin(); s!=this->lFrameData[this->iFrame].shapes.end(); s++) {
 			PolyVectorShape &shape = *s;
 			shape.vertices[this->iCurveQuality].clear();
@@ -63,10 +64,7 @@ bool PolyVector::triangulate_shapes()
 		}
 		this->lFrameData[this->iFrame].triangulated[this->iCurveQuality] = true;
 		#ifdef POLYVECTOR_DEBUG
-		if(debugtimer > 0)
-			printf("%s triangulated in %.6f seconds\n",
-				this->sSvgFile.ascii().get_data(),
-				( this->os->get_ticks_usec() - debugtimer ) / 1000000.0L);
+			this->triangulation_time = ((this->os->get_ticks_usec()-debugtimer)/1000000.0L);
 		#endif
 	}
 	return this->render_shapes();
@@ -76,39 +74,49 @@ bool PolyVector::render_shapes()
 {
 	if(this->iFrame < this->lFrameData.size() && this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
 		this->clear();
+		#ifdef POLYVECTOR_DEBUG
+		this->vertex_count = 0;
+		uint64_t debugtimer = this->os->get_ticks_usec();
+		#endif
 		float depthoffset = 0.0f;
 		for(std::list<PolyVectorShape>::iterator s=this->lFrameData[this->iFrame].shapes.begin(); s!=this->lFrameData[this->iFrame].shapes.end(); s++) {
 			PolyVectorShape shape = *s;
 			if(shape.indices[this->iCurveQuality].size() >= 0) {
 				this->begin(Mesh::PRIMITIVE_TRIANGLES);
+				this->set_color(shape.fillcolour);
+				this->set_normal(Vector3(0.0, 0.0, 1.0));
 				for(std::vector<N>::reverse_iterator tris = shape.indices[this->iCurveQuality].rbegin();
 					tris != shape.indices[this->iCurveQuality].rend();
 					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
-					this->set_color(shape.fillcolour);
-					this->set_normal(Vector3(0.0, 0.0, 1.0));
 					this->add_vertex(Vector3(
 						( shape.vertices[this->iCurveQuality][*tris].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
 						( shape.vertices[this->iCurveQuality][*tris].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
 						depthoffset));
+					#ifdef POLYVECTOR_DEBUG
+					this->vertex_count++;
+					#endif
 				}
 				this->end();
 			}
-			for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
-				PoolVector2Array line = it->get();
-				PoolVector2Array::Read lineread = it->get().read();
-				this->begin(Mesh::PRIMITIVE_LINE_STRIP);
-				for(int pt = 0; pt < line.size(); pt++) {
-					this->set_color(shape.strokecolour);
-					this->set_normal(Vector3(0.0, 0.0, 1.0));
-					this->add_vertex(Vector3(
-						( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
-						( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
-						depthoffset));
-				}
-				this->end();
-			}
+			//for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
+			//	PoolVector2Array line = it->get();
+			//	PoolVector2Array::Read lineread = it->get().read();
+			//	this->begin(Mesh::PRIMITIVE_LINE_STRIP);
+			//	this->set_color(shape.strokecolour);
+			//	this->set_normal(Vector3(0.0, 0.0, 1.0));
+			//	for(int pt = 0; pt < line.size(); pt++) {
+			//		this->add_vertex(Vector3(
+			//			( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
+			//			( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+			//			depthoffset));
+			//	}
+			//	this->end();
+			//}
 			if(this->bZOrderOffset)	depthoffset += this->fLayerDepth;
 		}
+		#ifdef POLYVECTOR_DEBUG
+		this->mesh_update_time = ( ( this->os->get_ticks_usec()-debugtimer )/1000000.0L );
+		#endif
 	}
 	return true;
 }
@@ -202,6 +210,23 @@ int PolyVector::get_billboard()
 
 
 
+#ifdef POLYVECTOR_DEBUG
+double PolyVector::get_triangulation_time()
+{
+	return this->triangulation_time;
+}
+double PolyVector::get_mesh_update_time()
+{
+	return this->mesh_update_time;
+}
+uint32_t PolyVector::get_vertex_count()
+{
+	return this->vertex_count;
+}
+#endif
+
+
+
 void PolyVector::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("set_vector_image"), &PolyVector::set_vector_image);
@@ -237,4 +262,10 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_layer_separation"), &PolyVector::set_layer_separation);
 	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Layer Separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
+
+	#ifdef POLYVECTOR_DEBUG
+	ClassDB::bind_method(D_METHOD("get_triangulation_time"), &PolyVector::get_triangulation_time);
+	ClassDB::bind_method(D_METHOD("get_mesh_update_time"), &PolyVector::get_mesh_update_time);
+	ClassDB::bind_method(D_METHOD("get_vertex_count"), &PolyVector::get_vertex_count);
+	#endif
 }

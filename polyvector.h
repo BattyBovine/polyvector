@@ -12,6 +12,8 @@
 #include "resource_importer_svg_swf.h"
 #include "earcut.hpp/earcut.hpp"
 
+#define POLYVECTOR_DEBUG
+
 #define POLYVECTOR_TESSELLATION_MAX_ANGLE 2.0f
 
 using Coord = float;
@@ -50,14 +52,16 @@ public:
 	void set_billboard(int);
 	int get_billboard();
 
+	#ifdef POLYVECTOR_DEBUG
+	double get_triangulation_time();
+	double get_mesh_update_time();
+	uint32_t get_vertex_count();
+	#endif
+
 protected:
 	static void _bind_methods();
 
 private:
-	#ifdef POLYVECTOR_DEBUG
-	OS *os;
-	#endif
-
 	Ref<JSONVector> dataVectorFile;
 	Ref<SpatialMaterial> materialDefault;
 	List<PolyVectorFrame> lFrameData;
@@ -68,6 +72,13 @@ private:
 	int32_t iFrame;
 	Vector2 v2Scale, v2Offset;
 	int8_t iCurveQuality;
+
+	#ifdef POLYVECTOR_DEBUG
+	OS *os;
+	double triangulation_time;
+	double mesh_update_time;
+	uint32_t vertex_count;
+	#endif
 };
 
 #endif	// POLYVECTOR_H_26f336d6d05611e7abc4cec278b6b50a
