@@ -115,6 +115,17 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						shapeout[PV_JSON_NAME_FILL] = remap.Fills[shapeno];
 						shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
 						shapeout[PV_JSON_NAME_CLOSED] = shape.closed;
+						if(!shape.clockwise) {	// Keep enclosing shapes wound clockwise
+							std::vector<SWF::Vertex> reverseverts;
+							SWF::Point controlcache;
+							for(std::vector<SWF::Vertex>::reverse_iterator v=shape.vertices.rbegin(); v!=shape.vertices.rend(); v++) {
+								SWF::Point newctrl = controlcache;
+								controlcache = v->control;
+								v->control = newctrl;
+								reverseverts.push_back(*v);
+							}
+							shape.vertices = reverseverts;
+						}
 						for(std::vector<SWF::Vertex>::iterator v=shape.vertices.begin(); v!=shape.vertices.end(); v++) {
 							if(v!=shape.vertices.begin()) {
 								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->control.x : double(round(v->control.x*100.0f)/100.0L);
@@ -128,6 +139,17 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						for(std::list<uint16_t>::iterator h=remap.Holes[shapeno].begin(); h!=remap.Holes[shapeno].end(); h++) {
 							uint16_t hole = *h;
 							json holeverts;
+							if(remap.Shapes[hole].clockwise) {	// Keep holes wound counter-clockwise
+								std::vector<SWF::Vertex> reverseverts;
+								SWF::Point controlcache;
+								for(std::vector<SWF::Vertex>::reverse_iterator v=remap.Shapes[hole].vertices.rbegin(); v!=remap.Shapes[hole].vertices.rend(); v++) {
+									SWF::Point newctrl = controlcache;
+									controlcache = v->control;
+									v->control = newctrl;
+									reverseverts.push_back(*v);
+								}
+								remap.Shapes[hole].vertices = reverseverts;
+							}
 							for(std::vector<SWF::Vertex>::iterator hv=remap.Shapes[hole].vertices.begin(); hv!=remap.Shapes[hole].vertices.end(); hv++) {
 								if(hv!=remap.Shapes[hole].vertices.begin()) {
 									holeverts += bool(p_options["binary"]) ? hv->control.x : double(round(hv->control.x*100.0f)/100.0L);
