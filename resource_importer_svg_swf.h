@@ -20,10 +20,10 @@ struct PolyVectorMatrix
 {
 	float TranslateX = 0.0f;
 	float TranslateY = 0.0f;
-	float Skew0 = 0.0f;
-	float Skew1 = 0.0f;
 	float ScaleX = 1.0f;
 	float ScaleY = 1.0f;
+	float Skew0 = 0.0f;
+	float Skew1 = 0.0f;
 };
 struct PolyVectorPath
 {

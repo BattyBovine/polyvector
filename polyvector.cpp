@@ -3,7 +3,7 @@
 PolyVector::PolyVector()
 {
 	this->iFrame = 0;
-	this->v2Scale = Vector2( 1.0f, 1.0f );
+	this->fUnitScale = 1.0f;
 	this->v2Offset = Vector2( 0.0f, 0.0f );
 	this->iCurveQuality = 2;
 	this->bZOrderOffset = true;
@@ -79,18 +79,18 @@ bool PolyVector::render_shapes()
 		uint64_t debugtimer = this->os->get_ticks_usec();
 		#endif
 		float depthoffset = 0.0f;
-		for(std::list<PolyVectorShape>::iterator s=this->lFrameData[this->iFrame].shapes.begin(); s!=this->lFrameData[this->iFrame].shapes.end(); s++) {
-			PolyVectorShape shape = *s;
-			if(shape.indices[this->iCurveQuality].size() >= 0) {
+		float unitscale = (this->fUnitScale/1000.0f);
+		for(std::list<PolyVectorShape>::iterator shape=this->lFrameData[this->iFrame].shapes.begin(); shape!=this->lFrameData[this->iFrame].shapes.end(); shape++) {
+			if(shape->indices[this->iCurveQuality].size() >= 0) {
 				this->begin(Mesh::PRIMITIVE_TRIANGLES);
-				this->set_color(shape.fillcolour);
+				this->set_color(shape->fillcolour);
 				this->set_normal(Vector3(0.0, 0.0, 1.0));
-				for(std::vector<N>::reverse_iterator tris = shape.indices[this->iCurveQuality].rbegin();
-					tris != shape.indices[this->iCurveQuality].rend();
+				for(std::vector<N>::reverse_iterator tris = shape->indices[this->iCurveQuality].rbegin();
+					tris != shape->indices[this->iCurveQuality].rend();
 					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
 					this->add_vertex(Vector3(
-						( shape.vertices[this->iCurveQuality][*tris].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
-						( shape.vertices[this->iCurveQuality][*tris].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+						( shape->vertices[this->iCurveQuality][*tris].x * unitscale ) + this->v2Offset.x,
+						( shape->vertices[this->iCurveQuality][*tris].y * unitscale ) + this->v2Offset.y,
 						depthoffset));
 					#ifdef POLYVECTOR_DEBUG
 					this->vertex_count++;
@@ -158,14 +158,14 @@ int8_t PolyVector::get_curve_quality()
 	return this->iCurveQuality;
 }
 
-void PolyVector::set_unit_scale(Vector2 s)
+void PolyVector::set_unit_scale(real_t s)
 {
-	this->v2Scale=s;
+	this->fUnitScale=s;
 	this->render_shapes();
 }
-Vector2 PolyVector::get_unit_scale()
+real_t PolyVector::get_unit_scale()
 {
-	return this->v2Scale;
+	return this->fUnitScale;
 }
 
 void PolyVector::set_offset(Vector2 s)
@@ -257,13 +257,14 @@ void PolyVector::_bind_methods()
 
 	ClassDB::bind_method(D_METHOD("set_unit_scale"), &PolyVector::set_unit_scale);
 	ClassDB::bind_method(D_METHOD("get_unit_scale"), &PolyVector::get_unit_scale);
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "Unit Scale"), "set_unit_scale", "get_unit_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Unit Scale", PROPERTY_HINT_RANGE, "0.0, 1000.0, 1.0"), "set_unit_scale", "get_unit_scale");
 
+	#ifdef POLYVECTOR_DEBUG
+	ADD_GROUP("Debug","");
 	ClassDB::bind_method(D_METHOD("set_layer_separation"), &PolyVector::set_layer_separation);
 	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Layer Separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
 
-	#ifdef POLYVECTOR_DEBUG
 	ClassDB::bind_method(D_METHOD("get_triangulation_time"), &PolyVector::get_triangulation_time);
 	ClassDB::bind_method(D_METHOD("get_mesh_update_time"), &PolyVector::get_mesh_update_time);
 	ClassDB::bind_method(D_METHOD("get_vertex_count"), &PolyVector::get_vertex_count);

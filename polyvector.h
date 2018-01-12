@@ -41,8 +41,8 @@ public:
 	uint16_t get_frame();
 	void set_curve_quality(int);
 	int8_t get_curve_quality();
-	void set_unit_scale(Vector2);
-	Vector2 get_unit_scale();
+	void set_unit_scale(real_t);
+	real_t get_unit_scale();
 	void set_offset(Vector2);
 	Vector2 get_offset();
 	void set_layer_separation(real_t);
@@ -68,9 +68,10 @@ private:
 	Vector2 v2Dimensions;
 	bool bZOrderOffset;
 	real_t fLayerDepth;
+	real_t fUnitScale;
 
 	int32_t iFrame;
-	Vector2 v2Scale, v2Offset;
+	Vector2 v2Offset;
 	int8_t iCurveQuality;
 
 	#ifdef POLYVECTOR_DEBUG

@@ -177,10 +177,15 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 					charout[PV_JSON_NAME_ID] = charactermap[dl->second.id-1];
 					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.TranslateX  : double(round(dl->second.transform.TranslateX*100) / 100.0L);
 					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.TranslateY  : double(round(dl->second.transform.TranslateY*100) / 100.0L);
-					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew0 : double(round(dl->second.transform.RotateSkew0*100) / 100.0L);
-					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew1 : double(round(dl->second.transform.RotateSkew1*100) / 100.0L);
-					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleX      : double(round(dl->second.transform.ScaleX*100) / 100.0L);
-					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleY      : double(round(dl->second.transform.ScaleY*100) / 100.0L);
+					if((round(dl->second.transform.ScaleX*100)!=100.0f || round(dl->second.transform.ScaleY*100)!=100.0f) ||	// Only add the scale and rotate transformation values if they are different from the default
+						(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f)) {	// If the rotation value is different but scale is not, store the scale value anyway
+						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleX : double(round(dl->second.transform.ScaleX*100) / 100.0L);
+						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleY : double(round(dl->second.transform.ScaleY*100) / 100.0L);
+						if(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f) {
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew0 : double(round(dl->second.transform.RotateSkew0*100) / 100.0L);
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew1 : double(round(dl->second.transform.RotateSkew1*100) / 100.0L);
+						}
+					}
 					displaylist += charout;
 				}
 			}
@@ -390,12 +395,12 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 				chartransform.TranslateY = jdisplayitem[PV_JSON_NAME_TRANSFORM][1];
 			}
 			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=4) {
-				chartransform.Skew0 = jdisplayitem[PV_JSON_NAME_TRANSFORM][2];
-				chartransform.Skew1 = jdisplayitem[PV_JSON_NAME_TRANSFORM][3];
+				chartransform.ScaleX = jdisplayitem[PV_JSON_NAME_TRANSFORM][2];
+				chartransform.ScaleY = jdisplayitem[PV_JSON_NAME_TRANSFORM][3];
 			}
 			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=6) {
-				chartransform.ScaleX = jdisplayitem[PV_JSON_NAME_TRANSFORM][4];
-				chartransform.ScaleY = jdisplayitem[PV_JSON_NAME_TRANSFORM][5];
+				chartransform.Skew0 = jdisplayitem[PV_JSON_NAME_TRANSFORM][4];
+				chartransform.Skew1 = jdisplayitem[PV_JSON_NAME_TRANSFORM][5];
 			}
 			json jchar = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_CHARACTERS][characterid];
 			for(json::iterator jci = jchar.begin(); jci != jchar.end(); jci++) {
