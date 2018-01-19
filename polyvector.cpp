@@ -4,7 +4,7 @@ PolyVector::PolyVector()
 {
 	this->iFrame = 0;
 	this->fUnitScale = 1.0f;
-	this->v2Offset = Vector2( 0.0f, 0.0f );
+	this->v2Offset = Vector2(0.0f, 0.0f);
 	this->iCurveQuality = 2;
 	this->bZOrderOffset = true;
 	this->fLayerDepth = 0.0f;
@@ -12,7 +12,7 @@ PolyVector::PolyVector()
 	this->materialDefault.instance();
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
-	this->set_material_override(this->materialDefault);
+	this->set_material(this->materialDefault);
 
 	#ifdef POLYVECTOR_DEBUG
 	this->os = OS::get_singleton();
@@ -23,135 +23,107 @@ PolyVector::PolyVector()
 PolyVector::~PolyVector()
 {
 	if(!this->materialDefault.is_null())	this->materialDefault.unref();
-	this->clear();
 }
 
 
 
-bool PolyVector::triangulate_shapes()
+void PolyVector::triangulate_mesh()
 {
-	if(this->iFrame < this->lFrameData.size() && !this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
-		#ifdef POLYVECTOR_DEBUG
-		uint64_t debugtimer = this->os->get_ticks_usec();
-		#endif
-		for(std::list<PolyVectorShape>::iterator s=this->lFrameData[this->iFrame].shapes.begin(); s!=this->lFrameData[this->iFrame].shapes.end(); s++) {
-			PolyVectorShape &shape = *s;
-			shape.vertices[this->iCurveQuality].clear();
-			std::vector< std::vector<Vector2> > polygons;
-			PoolVector2Array tess = shape.path.curve.tessellate(this->iCurveQuality, POLYVECTOR_TESSELLATION_MAX_ANGLE);
-			if(!shape.path.closed) {	// If shape is not a closed loop, store as a stroke
-				shape.strokes[this->iCurveQuality].push_back(tess);
-			} else {					// Otherwise, triangulate
-				uint32_t tess_size = tess.size();
-				std::vector<Vector2> poly;
-				PoolVector2Array::Read tessreader = tess.read();
-				for(uint32_t i=1; i<tess_size; i++)
-					poly.push_back(tessreader[i]);
-				polygons.push_back(poly);
-				shape.vertices[this->iCurveQuality].insert(shape.vertices[this->iCurveQuality].end(), poly.begin(), poly.end());
-				for(std::list<PolyVectorPath>::iterator hole=shape.holes.begin(); hole!=shape.holes.end(); hole++) {
-					PoolVector2Array holetess = hole->curve.tessellate(this->iCurveQuality, POLYVECTOR_TESSELLATION_MAX_ANGLE);
-					uint32_t holetess_size = holetess.size();
-					std::vector<Vector2> holepoly;
-					PoolVector2Array::Read holetessreader = holetess.read();
-					for(uint32_t j=0; j<holetess_size; j++)
-						holepoly.push_back(holetessreader[j]);
-					polygons.push_back(holepoly);
-					shape.vertices[this->iCurveQuality].insert(shape.vertices[this->iCurveQuality].end(), holepoly.begin(), holepoly.end());
-				}
+	#ifdef POLYVECTOR_DEBUG
+	this->vertex_count = 0;
+	this->triangulation_time = 0.0L;
+	uint64_t debugtimer = this->os->get_ticks_usec();
+	#endif
+	
+	for(List<PolyVectorShape>::Element *s=this->lShapes.front(); s; s=s->next()) {
+		PolyVectorShape &shape = s->get();
+		shape.mesh[this->iCurveQuality].vertices.clear();
+		std::vector< std::vector<Vector2> > polygons;
+		PoolVector2Array tess = shape.path.curve.tessellate(this->iCurveQuality, POLYVECTOR_TESSELLATION_MAX_ANGLE);
+		if(!shape.path.closed) {	// If shape is not a closed loop, store as a stroke
+			shape.strokes[this->iCurveQuality].push_back(tess);
+		} else {					// Otherwise, triangulate
+			uint32_t tess_size = tess.size();
+			std::vector<Vector2> poly;
+			PoolVector2Array::Read tessreader = tess.read();
+			for(uint32_t i=1; i<tess_size; i++)
+				poly.push_back(tessreader[i]);
+			polygons.push_back(poly);
+			shape.mesh[this->iCurveQuality].vertices.insert(shape.mesh[this->iCurveQuality].vertices.end(), poly.begin(), poly.end());
+			for(List<PolyVectorPath>::Element *h=shape.holes.front(); h; h=h->next()) {
+				PolyVectorPath hole = h->get();
+				PoolVector2Array holetess = hole.curve.tessellate(this->iCurveQuality, POLYVECTOR_TESSELLATION_MAX_ANGLE);
+				uint32_t holetess_size = holetess.size();
+				std::vector<Vector2> holepoly;
+				PoolVector2Array::Read holetessreader = holetess.read();
+				for(uint32_t j=0; j<holetess_size; j++)
+					holepoly.push_back(holetessreader[j]);
+				polygons.push_back(holepoly);
+				shape.mesh[this->iCurveQuality].vertices.insert(shape.mesh[this->iCurveQuality].vertices.end(), holepoly.begin(), holepoly.end());
 			}
-			if(!polygons.empty())	shape.indices[this->iCurveQuality] = mapbox::earcut<N>(polygons);
 		}
-		this->lFrameData[this->iFrame].triangulated[this->iCurveQuality] = true;
-		#ifdef POLYVECTOR_DEBUG
-			this->triangulation_time = ((this->os->get_ticks_usec()-debugtimer)/1000000.0L);
-		#endif
+		if(!polygons.empty())
+			shape.mesh[this->iCurveQuality].indices = mapbox::earcut<N>(polygons);
 	}
-	return this->render_shapes();
+
+	#ifdef POLYVECTOR_DEBUG
+	this->triangulation_time = ((this->os->get_ticks_usec()-debugtimer)/1000000.0L);
+	#endif
+
+	this->_request_update();
 }
 
-bool PolyVector::render_shapes()
+void PolyVector::_create_mesh_array(Array &p_arr) const
 {
-	if(this->iFrame < this->lFrameData.size() && this->lFrameData[this->iFrame].triangulated[this->iCurveQuality]) {
-		this->clear();
-		#ifdef POLYVECTOR_DEBUG
-		this->vertex_count = 0;
-		uint64_t debugtimer = this->os->get_ticks_usec();
-		#endif
-		float depthoffset = 0.0f;
-		float unitscale = (this->fUnitScale/1000.0f);
-		for(std::list<PolyVectorShape>::iterator shape=this->lFrameData[this->iFrame].shapes.begin(); shape!=this->lFrameData[this->iFrame].shapes.end(); shape++) {
-			if(shape->indices[this->iCurveQuality].size() >= 0) {
-				this->begin(Mesh::PRIMITIVE_TRIANGLES);
-				this->set_color(shape->fillcolour);
-				this->set_normal(Vector3(0.0, 0.0, 1.0));
-				for(std::vector<N>::reverse_iterator tris = shape->indices[this->iCurveQuality].rbegin();
-					tris != shape->indices[this->iCurveQuality].rend();
-					tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
-					this->add_vertex(Vector3(
-						( shape->vertices[this->iCurveQuality][*tris].x * unitscale ) + this->v2Offset.x,
-						( shape->vertices[this->iCurveQuality][*tris].y * unitscale ) + this->v2Offset.y,
-						depthoffset));
-					#ifdef POLYVECTOR_DEBUG
-					this->vertex_count++;
-					#endif
-				}
-				this->end();
+	PoolVector<Vector3> vertices;
+	PoolVector<Vector3> normals;
+	PoolVector<Color> colours;
+	float depthoffset = 0.0f;
+	for(const List<PolyVectorShape>::Element *s=this->lShapes.front(); s; s=s->next()) {
+		PolyVectorShape shape = s->get();
+		if(shape.mesh[this->iCurveQuality].indices.size() > 0) {
+			float unitscale = (this->fUnitScale/1000.0f);
+			for(std::vector<N>::reverse_iterator tris = shape.mesh[this->iCurveQuality].indices.rbegin();
+				tris != shape.mesh[this->iCurveQuality].indices.rend();
+				tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
+				colours.push_back(shape.fillcolour);
+				normals.push_back(Vector3(0.0, 0.0, 1.0));
+				vertices.push_back(Vector3(
+					(shape.mesh[this->iCurveQuality].vertices[*tris].x * unitscale) + this->v2Offset.x,
+					(shape.mesh[this->iCurveQuality].vertices[*tris].y * unitscale) + this->v2Offset.y,
+					depthoffset));
+				#ifdef POLYVECTOR_DEBUG
+				this->vertex_count++;
+				#endif
 			}
-			//for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
-			//	PoolVector2Array line = it->get();
-			//	PoolVector2Array::Read lineread = it->get().read();
-			//	this->begin(Mesh::PRIMITIVE_LINE_STRIP);
-			//	this->set_color(shape.strokecolour);
-			//	this->set_normal(Vector3(0.0, 0.0, 1.0));
-			//	for(int pt = 0; pt < line.size(); pt++) {
-			//		this->add_vertex(Vector3(
-			//			( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
-			//			( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
-			//			depthoffset));
-			//	}
-			//	this->end();
-			//}
-			if(this->bZOrderOffset)	depthoffset += this->fLayerDepth;
 		}
-		#ifdef POLYVECTOR_DEBUG
-		this->mesh_update_time = ( ( this->os->get_ticks_usec()-debugtimer )/1000000.0L );
-		#endif
+		//for(List<PoolVector2Array>::Element *it = shape.strokes[this->iCurveQuality].front(); it; it = it->next()) {
+		//	PoolVector2Array line = it->get();
+		//	PoolVector2Array::Read lineread = it->get().read();
+		//	this->begin(Mesh::PRIMITIVE_LINE_STRIP);
+		//	this->set_color(shape.strokecolour);
+		//	this->set_normal(Vector3(0.0, 0.0, 1.0));
+		//	for(int pt = 0; pt < line.size(); pt++) {
+		//		this->add_vertex(Vector3(
+		//			( lineread[pt].x * (this->v2Scale.x/1000.0f) ) + this->v2Offset.x,
+		//			( lineread[pt].y * (this->v2Scale.y/1000.0f) ) + this->v2Offset.y,
+		//			depthoffset));
+		//	}
+		//	this->end();
+		//}
+		if(this->bZOrderOffset)	depthoffset += this->fLayerDepth;
 	}
-	return true;
+	p_arr[VS::ARRAY_VERTEX] = vertices;
+	p_arr[VS::ARRAY_NORMAL] = normals;
+	p_arr[VS::ARRAY_COLOR] = colours;
 }
 
 
-
-void PolyVector::set_vector_image(const Ref<JSONVector> &p_vector)
-{
-	if(p_vector == this->dataVectorFile)	return;
-	this->dataVectorFile = p_vector;
-	if(this->dataVectorFile.is_null())
-		return;
-	this->lFrameData = this->dataVectorFile->get_frames();
-	//this->v2Dimensions = this->dataVectorFile->get_dimensions();
-	this->triangulate_shapes();
-}
-Ref<JSONVector> PolyVector::get_vector_image() const
-{
-	return this->dataVectorFile;
-}
-
-void PolyVector::set_frame(int32_t f)
-{
-	this->iFrame = CLAMP(f,1,this->lFrameData.size())-1;
-	this->triangulate_shapes();
-}
-uint16_t PolyVector::get_frame()
-{
-	return this->iFrame+1;
-}
 
 void PolyVector::set_curve_quality(int t)
 {
 	this->iCurveQuality = t;
-	this->triangulate_shapes();
+	this->triangulate_mesh();
 }
 int8_t PolyVector::get_curve_quality()
 {
@@ -161,7 +133,7 @@ int8_t PolyVector::get_curve_quality()
 void PolyVector::set_unit_scale(real_t s)
 {
 	this->fUnitScale=s;
-	this->render_shapes();
+	this->_request_update();
 }
 real_t PolyVector::get_unit_scale()
 {
@@ -171,7 +143,7 @@ real_t PolyVector::get_unit_scale()
 void PolyVector::set_offset(Vector2 s)
 {
 	this->v2Offset=s;
-	this->render_shapes();
+	this->_request_update();
 }
 Vector2 PolyVector::get_offset()
 {
@@ -181,7 +153,7 @@ Vector2 PolyVector::get_offset()
 void PolyVector::set_layer_separation(real_t d)
 {
 	this->fLayerDepth = d;
-	this->render_shapes();
+	this->_request_update();
 }
 real_t PolyVector::get_layer_separation()
 {
@@ -191,7 +163,7 @@ real_t PolyVector::get_layer_separation()
 void PolyVector::set_material_unshaded(bool t)
 {
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_UNSHADED, t);
-	this->set_material_override(this->materialDefault);
+	this->set_material(this->materialDefault);
 }
 bool PolyVector::get_material_unshaded()
 {
@@ -201,7 +173,7 @@ bool PolyVector::get_material_unshaded()
 void PolyVector::set_billboard(int b)
 {
 	this->materialDefault->set_billboard_mode((SpatialMaterial::BillboardMode)b);
-	this->set_material_override(this->materialDefault);
+	this->set_material(this->materialDefault);
 }
 int PolyVector::get_billboard()
 {
@@ -215,10 +187,6 @@ double PolyVector::get_triangulation_time()
 {
 	return this->triangulation_time;
 }
-double PolyVector::get_mesh_update_time()
-{
-	return this->mesh_update_time;
-}
 uint32_t PolyVector::get_vertex_count()
 {
 	return this->vertex_count;
@@ -229,14 +197,6 @@ uint32_t PolyVector::get_vertex_count()
 
 void PolyVector::_bind_methods()
 {
-	ClassDB::bind_method(D_METHOD("set_vector_image"), &PolyVector::set_vector_image);
-	ClassDB::bind_method(D_METHOD("get_vector_image"), &PolyVector::get_vector_image);
-	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "Vector", PROPERTY_HINT_RESOURCE_TYPE, "JSONVector"), "set_vector_image", "get_vector_image");
-
-	ClassDB::bind_method(D_METHOD("set_frame"), &PolyVector::set_frame);
-	ClassDB::bind_method(D_METHOD("get_frame"), &PolyVector::get_frame);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "Frame", PROPERTY_HINT_RANGE, "1,65535,1,1"), "set_frame", "get_frame");
-
 	ClassDB::bind_method(D_METHOD("set_curve_quality"), &PolyVector::set_curve_quality);
 	ClassDB::bind_method(D_METHOD("get_curve_quality"), &PolyVector::get_curve_quality);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "Curve Quality", PROPERTY_HINT_RANGE, "0,9,1,2"), "set_curve_quality", "get_curve_quality");
@@ -266,7 +226,6 @@ void PolyVector::_bind_methods()
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Layer Separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
 
 	ClassDB::bind_method(D_METHOD("get_triangulation_time"), &PolyVector::get_triangulation_time);
-	ClassDB::bind_method(D_METHOD("get_mesh_update_time"), &PolyVector::get_mesh_update_time);
 	ClassDB::bind_method(D_METHOD("get_vertex_count"), &PolyVector::get_vertex_count);
 	#endif
 }
