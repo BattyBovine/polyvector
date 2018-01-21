@@ -3,6 +3,9 @@
 
 #include <vector>
 #include <core/os/os.h>
+#include <core/core_string_names.h>
+#include <scene/scene_string_names.h>
+#include <scene/3d/mesh_instance.h>
 #include <scene/resources/primitive_meshes.h>
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
@@ -57,32 +60,28 @@ struct PolyVectorShape
 	Color strokecolour;
 
 	Map<uint16_t, List<PoolVector2Array> > strokes;
-	Map<uint16_t, PolyVectorMesh> mesh;
 };
+typedef List<PolyVectorShape> PolyVectorCharacter;
 
-class PolyVector : public PrimitiveMesh {
-	GDCLASS(PolyVector, PrimitiveMesh)
+class PolyVector : public MeshInstance {
+	GDCLASS(PolyVector, MeshInstance)
 
 public:
 	PolyVector();
 	~PolyVector();
 
-	void begin_shape_data() { this->lShapes.clear(); }
-	void add_shape_data(PolyVectorShape s) { this->lShapes.push_back(s); }
-	void end_shape_data() { this->triangulate_mesh(); }
+	void set_character(PolyVectorCharacter);
+	PolyVectorCharacter get_character();
 
 	void set_curve_quality(int);
 	int8_t get_curve_quality();
 	void set_unit_scale(real_t);
 	real_t get_unit_scale();
-	void set_offset(Vector2);
-	Vector2 get_offset();
-	void set_layer_separation(real_t);
-	real_t get_layer_separation();
-	void set_material_unshaded(bool);
-	bool get_material_unshaded();
-	void set_billboard(int);
-	int get_billboard();
+	void set_material(Ref<SpatialMaterial>);
+	Ref<SpatialMaterial> get_material();
+
+	//virtual AABB get_aabb() const;
+	//virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const;
 
 	#ifdef POLYVECTOR_DEBUG
 	double get_triangulation_time();
@@ -91,21 +90,18 @@ public:
 
 protected:
 	static void _bind_methods();
-	virtual void _create_mesh_array(Array&) const;
 
 private:
-	void triangulate_mesh();
+	void triangulate_mesh(bool force_retri=false);
+	void clear_meshes();
 
-	List<PolyVectorShape> lShapes;
-	Map<uint16_t, bool> mTriangulated;
-	Ref<SpatialMaterial> materialDefault;
+	PolyVectorCharacter pvcCharacter;
+	Ref<SpatialMaterial> materialSpatial;
+	Map<uint16_t, Ref<ArrayMesh> > mapMeshes;
 	Vector2 v2Dimensions;
-	bool bZOrderOffset;
-	real_t fLayerDepth;
 	real_t fUnitScale;
 
 	int32_t iFrame;
-	Vector2 v2Offset;
 	int8_t iCurveQuality;
 
 	#ifdef POLYVECTOR_DEBUG

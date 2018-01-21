@@ -42,46 +42,53 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 
 		SWF::Dictionary *dict = swfparser->get_dict();
 		std::map<uint16_t, uint16_t> fillstylemap, linestylemap, charactermap;
-		std::vector<Color> fills, strokes;
+		std::vector<std::vector<Color> > fillarrays, strokearrays;
 		{	// Build the library definitions first
 			for(SWF::FillStyleMap::iterator fsm=dict->FillStyles.begin(); fsm!=dict->FillStyles.end(); fsm++) {
+				std::vector<Color> fillcolourarray;
 				for(SWF::FillStyleArray::iterator fs=fsm->second.begin(); fs!=fsm->second.end(); fs++) {
 					SWF::FillStyle fillstyle = *fs;
 					fillstylemap[fs-fsm->second.begin()+1] = fillstylemap.size()+1;
 					Color fillcolour;
 					if(fillstyle.StyleType==SWF::FillStyle::Type::SOLID) {
-						fillcolour.r = fillstyle.Color.r;
-						fillcolour.g = fillstyle.Color.g;
-						fillcolour.b = fillstyle.Color.b;
-						if(fillstyle.Color.a < 255)
-							fillcolour.a = fillstyle.Color.a;
+						fillcolour.r = (fillstyle.Color.r/256.0f);
+						fillcolour.g = (fillstyle.Color.g/256.0f);
+						fillcolour.b = (fillstyle.Color.b/256.0f);
+						fillcolour.a = (fillstyle.Color.a/256.0f);
 					}
-					fills.push_back(fillcolour);
+					fillcolourarray.push_back(fillcolour);
 				}
+				fillarrays.push_back(fillcolourarray);
 			}
 			for(SWF::LineStyleMap::iterator lsm=dict->LineStyles.begin(); lsm!=dict->LineStyles.end(); lsm++) {
+				std::vector<Color> strokecolourarray;
 				for(SWF::LineStyleArray::iterator ls=lsm->second.begin(); ls!=lsm->second.end(); ls++) {
 					SWF::LineStyle linestyle = *ls;
+					Color strokecolour;
 					if(linestyle.Width>0.0f) {
-						Color strokecolour;
 						linestylemap[ls-lsm->second.begin()+1] = linestylemap.size()+1;
-						strokecolour.r += linestyle.Color.r;
-						strokecolour.g += linestyle.Color.g;
-						strokecolour.b += linestyle.Color.b;
-						if(linestyle.Color.a < 255)
-							strokecolour.a += linestyle.Color.a;
-						strokes.push_back(strokecolour);
+						strokecolour.r += (linestyle.Color.r/256.0f);
+						strokecolour.g += (linestyle.Color.g/256.0f);
+						strokecolour.b += (linestyle.Color.b/256.0f);
+						strokecolour.a += (linestyle.Color.a/256.0f);
 					}
+					strokecolourarray.push_back(strokecolour);
 				}
+				strokearrays.push_back(strokecolourarray);
 			}
 			for(SWF::CharacterDict::iterator cd = dict->CharacterList.begin(); cd != dict->CharacterList.end(); cd++) {
 				uint16_t characterid = cd->first;
 				SWF::Character character = cd->second;
 				if(characterid>0) {
 					charactermap[characterid] = charactermap.size()+1;
-					Ref<PolyVector> polyvector = memnew(PolyVector);
-					polyvector->begin_shape_data();
+					PolyVector *polyvector = memnew(PolyVector);
+					Ref<SpatialMaterial> material;
+					material.instance();
+					material->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
+					material->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
+					polyvector->set_material(material);
 					ShapeRemap remap = this->shape_builder(character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
+					PolyVectorCharacter pvchar;
 					for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
 						uint16_t shapeno = (s-remap.Shapes.begin());
 						if(remap.Fills[shapeno]==0)	continue;
@@ -98,6 +105,10 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						//	swfshape.vertices = reverseverts;
 						//}
 						PolyVectorShape pvshape;
+						if(remap.Fills[shapeno]!=0)
+							pvshape.fillcolour = fillarrays[charactermap[characterid]-1][remap.Fills[shapeno]-1];
+						if(swfshape.stroke!=0)
+							pvshape.strokecolour = strokearrays[charactermap[characterid]][swfshape.stroke-1];
 						std::vector<SWF::Point> importedverts;
 						for(std::vector<SWF::Vertex>::iterator v=swfshape.vertices.begin(); v!=swfshape.vertices.end(); v++) {
 							if(v!=swfshape.vertices.begin())
@@ -130,14 +141,13 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 							}
 							pvshape.holes.push_back(this->verts_to_curve(importedholeverts));
 						}
-						polyvector->add_shape_data(pvshape);
+						pvchar.push_back(pvshape);
 					}
-					polyvector->end_shape_data();
-					MeshInstance *mesh = memnew(MeshInstance);
-					mesh->set_mesh(polyvector);
-					mesh->set_name("Symbol"+itos(scene->get_child_count()+1));
-					scene->add_child(mesh);
-					mesh->set_owner(scene);
+					polyvector->set_unit_scale(float(p_options["vector/unit_scale"]));
+					polyvector->set_character(pvchar);
+					polyvector->set_name("Symbol"+itos(scene->get_child_count()));
+					scene->add_child(polyvector);
+					polyvector->set_owner(scene);
 				}
 			}
 		}
@@ -162,6 +172,12 @@ void ResourceImporterSWF::get_import_options(List<ImportOption> *r_options, int 
 	r_options->push_back(ImportOption(PropertyInfo(Variant::STRING, "nodes/root_type", PROPERTY_HINT_TYPE_STRING, "Node"), "Spatial"));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::STRING, "nodes/root_name"), "PolyVector"));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::STRING, "nodes/symbol_prefix"), "Symbol"));
+
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "material/unshaded"), false));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "material/billboard", PROPERTY_HINT_ENUM, "Disabled,Enabled,Y-Billboard,Particle"), 0));
+
+	r_options->push_back(ImportOption(PropertyInfo(Variant::REAL, "vector/unit_scale", PROPERTY_HINT_RANGE, "0.0, 1000.0"), 1.0f));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::REAL, "vector/layer_separation", PROPERTY_HINT_RANGE, "0.0, 1.0"), 0.0f));
 }
 
 ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeList sl)
@@ -306,7 +322,7 @@ PolyVectorPath ResourceImporterSWF::verts_to_curve(std::vector<SWF::Point> verts
 	PolyVectorPath pvpath;
 	if(verts.size()>1) {
 		Vector2 inctrldelta, outctrldelta, quadcontrol;
-		Vector2 anchor(verts[0].x, verts[0].y);
+		Vector2 anchor(verts[0].x, -verts[0].y);
 		Vector2 firstanchor = anchor;
 		for(std::vector<SWF::Point>::iterator vi=verts.begin()+1; vi!=verts.end(); vi++) {
 			SWF::Point vert = *vi;
@@ -327,7 +343,7 @@ PolyVectorPath ResourceImporterSWF::verts_to_curve(std::vector<SWF::Point> verts
 			}
 		}
 		if(pvpath.closed) {
-			pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
+			//pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
 			inctrldelta = (quadcontrol-firstanchor)*(2.0f/3.0f);
 			pvpath.curve.add_point(firstanchor, inctrldelta, Vector2(0,0));
 		}
