@@ -5,20 +5,37 @@
 #include "resource_importer_swf.h"
 
 #ifdef TOOLS_ENABLED
+//Error ResourceImporterSVG::import(const String &p_source_file, const String &p_save_path, const Map<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files)
+//{
+//	FileAccess *svg = FileAccess::open(p_source_file, FileAccess::READ);
+//	ERR_FAIL_COND_V(!svg, ERR_FILE_CANT_READ);
+//	FileAccess *svgraw = FileAccess::open(p_save_path + ".svgraw", FileAccess::WRITE);
+//	ERR_FAIL_COND_V(!svgraw, ERR_FILE_CANT_WRITE);
+//
+//	size_t xmllen = svg->get_len();
+//	ERR_FAIL_COND_V(!xmllen, ERR_CANT_OPEN);
+//	{
+//		uint8_t *svgdata = new uint8_t[xmllen];
+//		svg->get_buffer(svgdata, xmllen);
+//		svgraw->store_buffer(svgdata, xmllen);
+//	}
+//	svgraw->close();
+//	memdelete(svgraw);
+//	svg->close();
+//	memdelete(svg);
+//
+//	return OK;
+//}
+
 Error ResourceImporterSWF::import(const String &p_source_file, const String &p_save_path, const Map<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files)
 {
 	FileAccess *swf = FileAccess::open(p_source_file, FileAccess::READ);
 	ERR_FAIL_COND_V(!swf, ERR_FILE_CANT_READ);
-	//FileAccess *pvimport = FileAccess::open(p_save_path + ".jvec", FileAccess::WRITE);
-	//ERR_FAIL_COND_V(!pvimport, ERR_FILE_CANT_WRITE);
+	FileAccess *pvimport = FileAccess::open(p_save_path + ".jvec", FileAccess::WRITE);
+	ERR_FAIL_COND_V(!pvimport, ERR_FILE_CANT_WRITE);
 
 	size_t xmllen = swf->get_len();
 	ERR_FAIL_COND_V(!xmllen, ERR_CANT_OPEN);
-
-	String root_type = p_options["nodes/root_type"];
-	Node *scene = Object::cast_to<Node>(ClassDB::instance(root_type));
-	scene->set_name(p_options["nodes/root_name"]);
-
 	{
 		uint8_t *swfdata = new uint8_t[xmllen];
 		swf->get_buffer(swfdata, xmllen);
@@ -41,143 +58,164 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 		}
 
 		SWF::Dictionary *dict = swfparser->get_dict();
+		json root;
 		std::map<uint16_t, uint16_t> fillstylemap, linestylemap, charactermap;
-		std::vector<std::vector<Color> > fillarrays, strokearrays;
 		{	// Build the library definitions first
 			for(SWF::FillStyleMap::iterator fsm=dict->FillStyles.begin(); fsm!=dict->FillStyles.end(); fsm++) {
-				std::vector<Color> fillcolourarray;
+				json fillstylearray;
 				for(SWF::FillStyleArray::iterator fs=fsm->second.begin(); fs!=fsm->second.end(); fs++) {
 					SWF::FillStyle fillstyle = *fs;
 					fillstylemap[fs-fsm->second.begin()+1] = fillstylemap.size()+1;
-					Color fillcolour;
+					json fillstyledef;
 					if(fillstyle.StyleType==SWF::FillStyle::Type::SOLID) {
-						fillcolour.r = (fillstyle.Color.r/256.0f);
-						fillcolour.g = (fillstyle.Color.g/256.0f);
-						fillcolour.b = (fillstyle.Color.b/256.0f);
-						fillcolour.a = (fillstyle.Color.a/256.0f);
+						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.r;
+						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.g;
+						fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.b;
+						if(fillstyle.Color.a < 255)
+							fillstyledef[PV_JSON_NAME_COLOUR] += fillstyle.Color.a;
+					} else {	// Placeholder for unsupported fill types
+						fillstyledef[PV_JSON_NAME_COLOUR] += 0;
+						fillstyledef[PV_JSON_NAME_COLOUR] += 0;
+						fillstyledef[PV_JSON_NAME_COLOUR] += 0;
 					}
-					fillcolourarray.push_back(fillcolour);
+					fillstylearray += fillstyledef;
 				}
-				fillarrays.push_back(fillcolourarray);
+				root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES] += fillstylearray;
 			}
 			for(SWF::LineStyleMap::iterator lsm=dict->LineStyles.begin(); lsm!=dict->LineStyles.end(); lsm++) {
-				std::vector<Color> strokecolourarray;
+				json linestylearray;
 				for(SWF::LineStyleArray::iterator ls=lsm->second.begin(); ls!=lsm->second.end(); ls++) {
 					SWF::LineStyle linestyle = *ls;
-					Color strokecolour;
 					if(linestyle.Width>0.0f) {
 						linestylemap[ls-lsm->second.begin()+1] = linestylemap.size()+1;
-						strokecolour.r += (linestyle.Color.r/256.0f);
-						strokecolour.g += (linestyle.Color.g/256.0f);
-						strokecolour.b += (linestyle.Color.b/256.0f);
-						strokecolour.a += (linestyle.Color.a/256.0f);
+						json linestyledef;
+						linestyledef[PV_JSON_NAME_LINEWIDTH] = bool(p_options["binary"]) ? linestyle.Width : double(round(linestyle.Width*100)/100.0L);
+						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.r;
+						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.g;
+						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.b;
+						if(linestyle.Color.a < 255)
+							linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.a;
+						linestylearray += linestyledef;
 					}
-					strokecolourarray.push_back(strokecolour);
 				}
-				strokearrays.push_back(strokecolourarray);
+				root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES] += linestylearray;
 			}
 			for(SWF::CharacterDict::iterator cd = dict->CharacterList.begin(); cd != dict->CharacterList.end(); cd++) {
 				uint16_t characterid = cd->first;
 				SWF::Character character = cd->second;
 				if(characterid>0) {
 					charactermap[characterid] = charactermap.size()+1;
-					PolyVector *polyvector = memnew(PolyVector);
-					Ref<SpatialMaterial> material;
-					material.instance();
-					material->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
-					material->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
-					polyvector->set_material(material);
+					json characterdef;
 					ShapeRemap remap = this->shape_builder(character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
-					PolyVectorCharacter pvchar;
 					for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
 						uint16_t shapeno = (s-remap.Shapes.begin());
-						if(remap.Fills[shapeno]==0)	continue;
-						SWF::Shape swfshape = *s;
-						//if(!swfshape.clockwise) {	// Keep enclosing shapes wound clockwise
-						//	std::vector<SWF::Vertex> reverseverts;
-						//	SWF::Point controlcache;
-						//	for(std::vector<SWF::Vertex>::reverse_iterator v=swfshape.vertices.rbegin(); v!=swfshape.vertices.rend(); v++) {
-						//		SWF::Point newctrl = controlcache;
-						//		controlcache = v->control;
-						//		v->control = newctrl;
-						//		reverseverts.push_back(*v);
-						//	}
-						//	swfshape.vertices = reverseverts;
-						//}
-						PolyVectorShape pvshape;
-						if(remap.Fills[shapeno]!=0)
-							pvshape.fillcolour = fillarrays[charactermap[characterid]-1][remap.Fills[shapeno]-1];
-						if(swfshape.stroke!=0)
-							pvshape.strokecolour = strokearrays[charactermap[characterid]][swfshape.stroke-1];
-						std::vector<SWF::Point> importedverts;
-						for(std::vector<SWF::Vertex>::iterator v=swfshape.vertices.begin(); v!=swfshape.vertices.end(); v++) {
-							if(v!=swfshape.vertices.begin())
-								importedverts.push_back(v->control);
-							if(swfshape.closed && v==(swfshape.vertices.end()-1))
-								break;
-							importedverts.push_back(v->anchor);
+						if(remap.Fills[shapeno]==0)	continue;	// Skip holes; we handle those along with the parent shape
+						SWF::Shape shape = *s;
+						json shapeout;
+						shapeout[PV_JSON_NAME_FILL] = remap.Fills[shapeno];
+						shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
+						shapeout[PV_JSON_NAME_CLOSED] = shape.closed;
+						if(!shape.clockwise) {	// Keep enclosing shapes wound clockwise
+							std::vector<SWF::Vertex> reverseverts;
+							SWF::Point controlcache;
+							for(std::vector<SWF::Vertex>::reverse_iterator v=shape.vertices.rbegin(); v!=shape.vertices.rend(); v++) {
+								SWF::Point newctrl = controlcache;
+								controlcache = v->control;
+								v->control = newctrl;
+								reverseverts.push_back(*v);
+							}
+							shape.vertices = reverseverts;
 						}
-						pvshape.path = this->verts_to_curve(importedverts);
+						for(std::vector<SWF::Vertex>::iterator v=shape.vertices.begin(); v!=shape.vertices.end(); v++) {
+							if(v!=shape.vertices.begin()) {
+								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->control.x : double(round(v->control.x*100.0f)/100.0L);
+								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->control.y : double(round(v->control.y*100.0f)/100.0L);
+							}
+							if(shapeout[PV_JSON_NAME_CLOSED]==true && v==(shape.vertices.end()-1))
+								break;
+							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->anchor.x : double(round(v->anchor.x*100.0f)/100.0L);
+							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->anchor.y : double(round(v->anchor.y*100.0f)/100.0L);
+						}
 						for(std::list<uint16_t>::iterator h=remap.Holes[shapeno].begin(); h!=remap.Holes[shapeno].end(); h++) {
 							uint16_t hole = *h;
-							//if(remap.Shapes[hole].clockwise) {	// Keep holes wound counter-clockwise
-							//	std::vector<SWF::Vertex> reverseverts;
-							//	SWF::Point controlcache;
-							//	for(std::vector<SWF::Vertex>::reverse_iterator v=remap.Shapes[hole].vertices.rbegin(); v!=remap.Shapes[hole].vertices.rend(); v++) {
-							//		SWF::Point newctrl = controlcache;
-							//		controlcache = v->control;
-							//		v->control = newctrl;
-							//		reverseverts.push_back(*v);
-							//	}
-							//	remap.Shapes[hole].vertices = reverseverts;
-							//}
-							std::vector<SWF::Point> importedholeverts;
+							json holeverts;
+							if(remap.Shapes[hole].clockwise) {	// Keep holes wound counter-clockwise
+								std::vector<SWF::Vertex> reverseverts;
+								SWF::Point controlcache;
+								for(std::vector<SWF::Vertex>::reverse_iterator v=remap.Shapes[hole].vertices.rbegin(); v!=remap.Shapes[hole].vertices.rend(); v++) {
+									SWF::Point newctrl = controlcache;
+									controlcache = v->control;
+									v->control = newctrl;
+									reverseverts.push_back(*v);
+								}
+								remap.Shapes[hole].vertices = reverseverts;
+							}
 							for(std::vector<SWF::Vertex>::iterator hv=remap.Shapes[hole].vertices.begin(); hv!=remap.Shapes[hole].vertices.end(); hv++) {
-								if(hv!=remap.Shapes[hole].vertices.begin())
-									importedholeverts.push_back(hv->control);
+								if(hv!=remap.Shapes[hole].vertices.begin()) {
+									holeverts += bool(p_options["binary"]) ? hv->control.x : double(round(hv->control.x*100.0f)/100.0L);
+									holeverts += bool(p_options["binary"]) ? hv->control.y : double(round(hv->control.y*100.0f)/100.0L);
+								}
 								if(remap.Shapes[hole].closed==true && hv==(remap.Shapes[hole].vertices.end()-1))
 									break;
-								importedholeverts.push_back(hv->anchor);
+								holeverts += bool(p_options["binary"]) ? hv->anchor.x : double(round(hv->anchor.x*100.0f)/100.0L);
+								holeverts += bool(p_options["binary"]) ? hv->anchor.y : double(round(hv->anchor.y*100.0f)/100.0L);
 							}
-							pvshape.holes.push_back(this->verts_to_curve(importedholeverts));
+							shapeout[PV_JSON_NAME_HOLES] += holeverts;
 						}
-						pvchar.push_back(pvshape);
+						characterdef += shapeout;
 					}
-					polyvector->set_unit_scale(float(p_options["vector/unit_scale"]));
-					polyvector->set_character(pvchar);
-					polyvector->set_name("Symbol"+itos(scene->get_child_count()));
-					scene->add_child(polyvector);
-					polyvector->set_owner(scene);
+					root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_CHARACTERS] += characterdef;
 				}
 			}
+		}
+		for(SWF::FrameList::iterator f=dict->Frames.begin(); f!=dict->Frames.end(); f++) {
+			SWF::DisplayList framedisplist = *f;
+			json jdisplaylist;
+			for(SWF::DisplayList::iterator dl=framedisplist.begin(); dl!=framedisplist.end(); dl++) {
+				if(dl->second.id>0) {
+					json charout;
+					charout[PV_JSON_NAME_ID] = charactermap[dl->second.id-1];
+					charout[PV_JSON_NAME_DEPTH] = dl->first;
+					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.TranslateX  : double(round(dl->second.transform.TranslateX*100) / 100.0L);
+					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.TranslateY  : double(round(dl->second.transform.TranslateY*100) / 100.0L);
+					if((round(dl->second.transform.ScaleX*100)!=100.0f || round(dl->second.transform.ScaleY*100)!=100.0f) ||	// Only add the scale and rotate transformation values if they are different from the default
+						(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f)) {	// If the rotation value is different but scale is not, store the scale value anyway
+						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleX : double(round(dl->second.transform.ScaleX*100) / 100.0L);
+						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleY : double(round(dl->second.transform.ScaleY*100) / 100.0L);
+						if(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f) {
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew0 : double(round(dl->second.transform.RotateSkew0*100) / 100.0L);
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew1 : double(round(dl->second.transform.RotateSkew1*100) / 100.0L);
+						}
+					}
+					jdisplaylist += charout;
+				}
+			}
+			if(jdisplaylist.size()>0) root[PV_JSON_NAME_FRAMES] += jdisplaylist;
+		}
+
+		if(bool(p_options["binary"])) {
+			std::vector<uint8_t> jsonout = json::to_msgpack(root);
+			pvimport->store_buffer(jsonout.data(), jsonout.size());
+		} else {
+			std::string out = root.dump(bool(p_options["prettify_text"])?2:-1);
+			pvimport->store_buffer((const uint8_t*)out.c_str(), out.size());
 		}
 
 		if(swfparser)	delete swfparser;
 		if(swfdata)		delete swfdata;
 	}
+	pvimport->close();
+	memdelete(pvimport);
 	swf->close();
 	memdelete(swf);
-
-	Ref<PackedScene> packer = memnew(PackedScene);
-	packer->pack(scene);
-	Error err = ResourceSaver::save(p_save_path + ".scn", packer);
-	ERR_FAIL_COND_V(err!=OK, err);
-	memdelete(scene);
 
 	return OK;
 }
 
 void ResourceImporterSWF::get_import_options(List<ImportOption> *r_options, int p_preset) const
 {
-	r_options->push_back(ImportOption(PropertyInfo(Variant::STRING, "nodes/root_type", PROPERTY_HINT_TYPE_STRING, "Node"), "Spatial"));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::STRING, "nodes/root_name"), "PolyVector"));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::STRING, "nodes/symbol_prefix"), "Symbol"));
-
-	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "material/unshaded"), false));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "material/billboard", PROPERTY_HINT_ENUM, "Disabled,Enabled,Y-Billboard,Particle"), 0));
-
-	r_options->push_back(ImportOption(PropertyInfo(Variant::REAL, "vector/unit_scale", PROPERTY_HINT_RANGE, "0.0, 1000.0"), 1.0f));
-	r_options->push_back(ImportOption(PropertyInfo(Variant::REAL, "vector/layer_separation", PROPERTY_HINT_RANGE, "0.0, 1.0"), 0.0f));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "binary"), false));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "prettify_text"), false));
 }
 
 ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeList sl)
@@ -316,38 +354,230 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeLis
 
 	return remap;
 }
+#endif
 
-PolyVectorPath ResourceImporterSWF::verts_to_curve(std::vector<SWF::Point> verts)
+
+
+RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_original_path, Error *r_error)
+{
+	if(r_error)	*r_error = ERR_FILE_CANT_OPEN;
+	FileAccess *polyvector = FileAccess::open(p_path, FileAccess::READ);
+	ERR_FAIL_COND_V(!polyvector, RES());
+	size_t jsonlength = polyvector->get_len();
+	uint8_t *jsonstring = new uint8_t[jsonlength];
+	polyvector->get_buffer(jsonstring, jsonlength);
+	polyvector->close();
+	memdelete(polyvector);
+
+	json jsondata;
+	try {
+		jsondata = json::parse(jsonstring, jsonstring+jsonlength);
+	} catch(const json::parse_error&) {
+		try {	// If the data could not be parsed as a string, it might be MessagePack-encoded
+			std::vector<uint8_t> msgpak(jsonstring, jsonstring+jsonlength);
+			jsondata = json::from_msgpack(msgpak);
+		} catch(const json::parse_error &e) {
+			OS::get_singleton()->alert(String("JSON error: ")+e.what(), "JSON Error");
+		}
+	}
+	delete[] jsonstring;
+
+	Ref<JSONVector> vectordata;
+	vectordata.instance();
+
+	// Load library data
+	json jchardict = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_CHARACTERS];
+	for(json::iterator jci=jchardict.begin(); jci!=jchardict.end(); jci++) {
+		json jchar = *jci;
+		uint16_t characterid = jci-jchardict.begin();
+		PolyVectorCharacter pvchar;
+		for(json::iterator jsi=jchar.begin(); jsi!=jchar.end(); jsi++) {
+			json jshape = *jsi;
+			uint16_t jshapefill = jshape[PV_JSON_NAME_FILL];
+			PolyVectorShape pvshape;
+			if(jshapefill>0) {
+				json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES][characterid][jshapefill-1][PV_JSON_NAME_COLOUR];
+				pvshape.fillcolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
+				if(jcolour.size()>3)	pvshape.fillcolour.a = jcolour[3]/255.0f;
+			}
+			uint16_t jshapestroke = jshape[PV_JSON_NAME_STROKE];
+			if(jshapestroke>0) {
+				json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES][characterid][jshapestroke-1][PV_JSON_NAME_COLOUR];
+				pvshape.strokecolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
+				if(jcolour.size()>3)	pvshape.strokecolour.a = jcolour[3]/255.0f;
+			}
+			PolyVectorPath pvpath = this->verts_to_curve(jshape[PV_JSON_NAME_VERTICES]);
+			pvpath.closed = jshape[PV_JSON_NAME_CLOSED];
+			pvshape.path = pvpath;
+			for(json::iterator jhv=jshape[PV_JSON_NAME_HOLES].begin(); jhv!=jshape[PV_JSON_NAME_HOLES].end(); jhv++) {
+				pvshape.holes.push_back(this->verts_to_curve(*jhv));
+			}
+			pvchar.push_back(pvshape);
+		}
+		vectordata->add_character(pvchar);
+	}
+
+	// Load frame data
+	for(json::iterator jfi=jsondata[PV_JSON_NAME_FRAMES].begin(); jfi!=jsondata[PV_JSON_NAME_FRAMES].end(); jfi++) {
+		json jdisplaylist = *jfi;
+		PolyVectorFrame frame;
+		for(json::iterator jdli=jdisplaylist.begin(); jdli!=jdisplaylist.end(); jdli++) {
+			json jdisplayitem = *jdli;
+			PolyVectorSymbol pvom;
+			pvom.depth = jdisplayitem[PV_JSON_NAME_DEPTH];
+			pvom.id = jdisplayitem[PV_JSON_NAME_ID];
+			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=2) {
+				pvom.matrix.TranslateX = jdisplayitem[PV_JSON_NAME_TRANSFORM][0];
+				pvom.matrix.TranslateY = jdisplayitem[PV_JSON_NAME_TRANSFORM][1];
+			}
+			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=4) {
+				pvom.matrix.ScaleX = jdisplayitem[PV_JSON_NAME_TRANSFORM][2];
+				pvom.matrix.ScaleY = jdisplayitem[PV_JSON_NAME_TRANSFORM][3];
+			}
+			if(jdisplayitem[PV_JSON_NAME_TRANSFORM].size()>=6) {
+				pvom.matrix.Skew0 = jdisplayitem[PV_JSON_NAME_TRANSFORM][4];
+				pvom.matrix.Skew1 = jdisplayitem[PV_JSON_NAME_TRANSFORM][5];
+			}
+			frame.push_back(pvom);
+		}
+		vectordata->add_frame(frame);
+	}
+
+	if(r_error)	*r_error = OK;
+
+	return vectordata;
+}
+
+PolyVectorPath ResourceLoaderJSONVector::verts_to_curve(json jverts)
 {
 	PolyVectorPath pvpath;
-	if(verts.size()>1) {
+	if(jverts.size()>2) {
 		Vector2 inctrldelta, outctrldelta, quadcontrol;
-		Vector2 anchor(verts[0].x, -verts[0].y);
+		Vector2 anchor(float(jverts[0]), -float(jverts[1]));
 		Vector2 firstanchor = anchor;
-		for(std::vector<SWF::Point>::iterator vi=verts.begin()+1; vi!=verts.end(); vi++) {
-			SWF::Point vert = *vi;
-			switch(((vi-verts.begin()+1)%2)) {
+		for(json::iterator jvi=jverts.begin()+2; jvi!=jverts.end(); jvi++) {
+			float vert = *jvi;
+			switch(((jvi-jverts.begin()+2)%4)) {
 				case 0:
 				{
-					quadcontrol = Vector2(vert.x,-vert.y);
-					outctrldelta = (quadcontrol-anchor)*(2.0f/3.0f);
-					pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
+					quadcontrol.x = vert;
 					break;
 				}
 				case 1:
 				{
-					anchor = Vector2(vert.x,-vert.y);
+					quadcontrol.y = -vert;
+					outctrldelta = (quadcontrol-anchor)*(2.0f/3.0f);
+					pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
+					break;
+				}
+				case 2:
+				{
+					anchor.x = vert;
+					break;
+				}
+				case 3:
+				{
+					anchor.y = -vert;
 					inctrldelta = (quadcontrol-anchor)*(2.0f/3.0f);
 					break;
 				}
 			}
 		}
 		if(pvpath.closed) {
-			//pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
+			pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
 			inctrldelta = (quadcontrol-firstanchor)*(2.0f/3.0f);
 			pvpath.curve.add_point(firstanchor, inctrldelta, Vector2(0,0));
 		}
 	}
 	return pvpath;
 }
-#endif
+
+
+
+//RES ResourceLoaderSVG::load(const String &p_path, const String &p_original_path, Error *r_error)
+//{
+//	if(r_error)	*r_error = ERR_FILE_CANT_OPEN;
+//	FileAccess *svgxml = FileAccess::open(p_path, FileAccess::READ);
+//	ERR_FAIL_COND_V(!svgxml, RES());
+//	size_t xmllen = svgxml->get_len();
+//	uint8_t *svgdata = new uint8_t[xmllen];
+//	svgxml->get_buffer(svgdata, xmllen);
+//	struct NSVGimage *img = nsvgParse((char*)svgdata, "px", 96);
+//	ERR_FAIL_COND_V(!img, RES());
+//
+//	Vector2 dimensions;
+//	dimensions.x = img->width;
+//	dimensions.y = img->height;
+//	PolyVectorFrame framedata;
+//	uint32_t shape_count = 0;
+//	for(NSVGshape *shape = img->shapes; shape; shape = shape->next) {
+//		PolyVectorShape shapedata;
+//		shapedata.fillcolour.r = ( ( shape->fill.color ) & 0x000000FF ) / 255.0f;
+//		shapedata.fillcolour.g = ( ( shape->fill.color>>8 ) & 0x000000FF ) / 255.0f;
+//		shapedata.fillcolour.b = ( ( shape->fill.color>>16 ) & 0x000000FF ) / 255.0f;
+//		shapedata.fillcolour.a = ( ( shape->fill.color>>24 ) & 0x000000FF ) / 255.0f;
+//		shapedata.strokecolour.r = ( ( shape->stroke.color ) & 0x000000FF ) / 255.0f;
+//		shapedata.strokecolour.g = ( ( shape->stroke.color>>8 ) & 0x000000FF ) / 255.0f;
+//		shapedata.strokecolour.b = ( ( shape->stroke.color>>16 ) & 0x000000FF ) / 255.0f;
+//		shapedata.strokecolour.a = ( ( shape->stroke.color>>24 ) & 0x000000FF ) / 255.0f;
+//		shapedata.id = shape_count;
+//		uint32_t path_count = 0;
+//		for(NSVGpath *path = shape->paths; path; path = path->next) {
+//			PolyVectorPath pathdata;
+//			if(path->npts > 0) {
+//				float *p = &path->pts[0];
+//				pathdata.curve.add_point(
+//					Vector2(p[0], -p[1]),
+//					Vector2(0.0f, 0.0f),
+//					Vector2(p[2]-p[0], -( p[3]-p[1] ))
+//				);
+//				for(int i = 0; i < ( path->npts/3 ); i++) {
+//					p = &path->pts[( i*6 )+4];
+//					pathdata.curve.add_point(
+//						Vector2(p[2], -p[3]),
+//						Vector2(p[0]-p[2], -( p[1]-p[3] )),
+//						Vector2(p[4]-p[2], -( p[5]-p[3] ))
+//					);
+//				}
+//			}
+//			pathdata.closed = path->closed;
+//			pathdata.id = path_count;
+//			if(path->closed)	pathdata.hole = this->_is_clockwise(pathdata.curve);
+//			else				pathdata.hole = false;
+//			shapedata.paths.push_back(pathdata);
+//			path_count++;
+//		}
+//		shapedata.paths.back().hole = false;		// Last shape is always a non-hole
+//		shapedata.vertices.clear();
+//		shapedata.indices.clear();
+//		shapedata.strokes.clear();
+//		framedata.shapes.push_back(shapedata);
+//		shape_count++;
+//	}
+//	nsvgDelete(img);
+//
+//	Ref<RawSVG> rawsvg;
+//	rawsvg.instance();
+//	rawsvg->add_frame(framedata);
+//	rawsvg->set_dimensions(dimensions);
+//
+//	if(r_error)	*r_error = OK;
+//
+//	return rawsvg;
+//}
+//
+//bool inline ResourceLoaderSVG::_is_clockwise(Curve2D c)
+//{
+//	if(c.get_point_count() < 3)	return false;
+//	N pointcount = c.get_point_count();
+//	int area = 0;
+//	Vector2 p0 = c.get_point_position(0);
+//	Vector2 pn = c.get_point_position(pointcount-1);
+//	for(N i=1; i<pointcount; i++) {
+//		Vector2 p1 = c.get_point_position(i);
+//		Vector2 p2 = c.get_point_position(i-1);
+//		area += ( p1.x - p2.x ) * ( p1.y + p2.y );
+//	}
+//	area += ( p0.x - pn.x ) * ( p0.y + pn.y );
+//	return ( area >= 0 );
+//}
