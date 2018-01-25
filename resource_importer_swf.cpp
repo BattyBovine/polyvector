@@ -82,24 +82,24 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 				}
 				root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES] += fillstylearray;
 			}
-			for(SWF::LineStyleMap::iterator lsm=dict->LineStyles.begin(); lsm!=dict->LineStyles.end(); lsm++) {
-				json linestylearray;
-				for(SWF::LineStyleArray::iterator ls=lsm->second.begin(); ls!=lsm->second.end(); ls++) {
-					SWF::LineStyle linestyle = *ls;
-					if(linestyle.Width>0.0f) {
-						linestylemap[ls-lsm->second.begin()+1] = linestylemap.size()+1;
-						json linestyledef;
-						linestyledef[PV_JSON_NAME_LINEWIDTH] = bool(p_options["binary"]) ? linestyle.Width : double(round(linestyle.Width*100)/100.0L);
-						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.r;
-						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.g;
-						linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.b;
-						if(linestyle.Color.a < 255)
-							linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.a;
-						linestylearray += linestyledef;
-					}
-				}
-				root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES] += linestylearray;
-			}
+			//for(SWF::LineStyleMap::iterator lsm=dict->LineStyles.begin(); lsm!=dict->LineStyles.end(); lsm++) {
+			//	json linestylearray;
+			//	for(SWF::LineStyleArray::iterator ls=lsm->second.begin(); ls!=lsm->second.end(); ls++) {
+			//		SWF::LineStyle linestyle = *ls;
+			//		if(linestyle.Width>0.0f) {
+			//			linestylemap[ls-lsm->second.begin()+1] = linestylemap.size()+1;
+			//			json linestyledef;
+			//			linestyledef[PV_JSON_NAME_LINEWIDTH] = bool(p_options["binary"]) ? linestyle.Width : double(round(linestyle.Width*100)/100.0L);
+			//			linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.r;
+			//			linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.g;
+			//			linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.b;
+			//			if(linestyle.Color.a < 255)
+			//				linestyledef[PV_JSON_NAME_COLOUR] += linestyle.Color.a;
+			//			linestylearray += linestyledef;
+			//		}
+			//	}
+			//	root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES] += linestylearray;
+			//}
 			for(SWF::CharacterDict::iterator cd = dict->CharacterList.begin(); cd != dict->CharacterList.end(); cd++) {
 				uint16_t characterid = cd->first;
 				SWF::Character character = cd->second;
@@ -113,7 +113,7 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						SWF::Shape shape = *s;
 						json shapeout;
 						shapeout[PV_JSON_NAME_FILL] = remap.Fills[shapeno];
-						shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
+						//shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
 						shapeout[PV_JSON_NAME_CLOSED] = shape.closed;
 						if(!shape.clockwise) {	// Keep enclosing shapes wound clockwise
 							std::vector<SWF::Vertex> reverseverts;
@@ -400,12 +400,12 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 				pvshape.fillcolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
 				if(jcolour.size()>3)	pvshape.fillcolour.a = jcolour[3]/255.0f;
 			}
-			uint16_t jshapestroke = jshape[PV_JSON_NAME_STROKE];
-			if(jshapestroke>0) {
-				json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES][characterid][jshapestroke-1][PV_JSON_NAME_COLOUR];
-				pvshape.strokecolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
-				if(jcolour.size()>3)	pvshape.strokecolour.a = jcolour[3]/255.0f;
-			}
+			//uint16_t jshapestroke = jshape[PV_JSON_NAME_STROKE];
+			//if(jshapestroke>0) {
+			//	json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES][characterid][jshapestroke-1][PV_JSON_NAME_COLOUR];
+			//	pvshape.strokecolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
+			//	if(jcolour.size()>3)	pvshape.strokecolour.a = jcolour[3]/255.0f;
+			//}
 			PolyVectorPath pvpath = this->verts_to_curve(jshape[PV_JSON_NAME_VERTICES]);
 			pvpath.closed = jshape[PV_JSON_NAME_CLOSED];
 			pvshape.path = pvpath;
