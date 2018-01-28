@@ -8,6 +8,7 @@ ResourceLoaderJSONVector *resource_loader_jsonvector = NULL;
 void register_polyvector_types()
 {
 	ClassDB::register_class<PolyVector>();
+	ClassDB::register_class<JSONVector>();
 	
 	resource_loader_jsonvector = memnew(ResourceLoaderJSONVector);
 	ResourceLoader::add_resource_format_loader(resource_loader_jsonvector);

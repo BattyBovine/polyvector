@@ -13,7 +13,6 @@ PolyVector::PolyVector()
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
 	this->materialDefault->set_cull_mode(SpatialMaterial::CULL_DISABLED);
-	this->set_material_override(this->materialDefault);
 
 	#ifdef POLYVECTOR_DEBUG
 	this->os = OS::get_singleton();
@@ -23,9 +22,7 @@ PolyVector::PolyVector()
 
 PolyVector::~PolyVector()
 {
-	for(MeshDictionaryMap::Element *d=this->mapMeshDictionary.front(); d; d=d->next())
-		for(MeshQualityMap::Element *m=d->get().front(); m; m=m->next())
-			m->get().unref();
+	this->clear_mesh_data();
 	if(!this->materialDefault.is_null())
 		this->materialDefault.unref();
 	this->dataVectorFile.unref();
@@ -130,6 +127,15 @@ void PolyVector::draw_current_frame()
 	#endif
 }
 
+void PolyVector::clear_mesh_data()
+{
+	for(MeshDictionaryMap::Element *d=this->mapMeshDictionary.front(); d; d=d->next()) {
+		for(MeshQualityMap::Element *m=d->get().front(); m; m=m->next())
+			m->get().unref();
+		d->get().clear();
+	}
+}
+
 
 
 void PolyVector::set_vector_image(const Ref<JSONVector> &p_vector)
@@ -140,8 +146,8 @@ void PolyVector::set_vector_image(const Ref<JSONVector> &p_vector)
 		return;
 	this->lFrameData = this->dataVectorFile->get_frames();
 	this->lDictionaryData = this->dataVectorFile->get_dictionary();
+	this->clear_mesh_data();
 	this->set_frame(0);
-	this->draw_current_frame();
 }
 Ref<JSONVector> PolyVector::get_vector_image() const
 {
@@ -201,21 +207,10 @@ real_t PolyVector::get_layer_separation()
 void PolyVector::set_material_unshaded(bool t)
 {
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_UNSHADED, t);
-	this->set_material_override(this->materialDefault);
 }
 bool PolyVector::get_material_unshaded()
 {
 	return this->materialDefault->get_flag(SpatialMaterial::FLAG_UNSHADED);
-}
-
-void PolyVector::set_billboard(int b)
-{
-	this->materialDefault->set_billboard_mode((SpatialMaterial::BillboardMode)b);
-	this->set_material_override(this->materialDefault);
-}
-int PolyVector::get_billboard()
-{
-	return (this->materialDefault->get_billboard_mode());
 }
 
 
@@ -270,45 +265,40 @@ void PolyVector::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("set_vector_image"), &PolyVector::set_vector_image);
 	ClassDB::bind_method(D_METHOD("get_vector_image"), &PolyVector::get_vector_image);
-	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "Vector", PROPERTY_HINT_RESOURCE_TYPE, "JSONVector"), "set_vector_image", "get_vector_image");
+	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "vector", PROPERTY_HINT_RESOURCE_TYPE, "JSONVector"), "set_vector_image", "get_vector_image");
 
+	ADD_GROUP("Display","");
 	ClassDB::bind_method(D_METHOD("set_frame"), &PolyVector::set_frame);
 	ClassDB::bind_method(D_METHOD("get_frame"), &PolyVector::get_frame);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "Frame", PROPERTY_HINT_RANGE, "0,65535,1,0"), "set_frame", "get_frame");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "frame", PROPERTY_HINT_RANGE, "0,65535,1,0"), "set_frame", "get_frame");
 
 	ClassDB::bind_method(D_METHOD("set_curve_quality"), &PolyVector::set_curve_quality);
 	ClassDB::bind_method(D_METHOD("get_curve_quality"), &PolyVector::get_curve_quality);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "Curve Quality", PROPERTY_HINT_RANGE, "0,9,1,2"), "set_curve_quality", "get_curve_quality");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "curve_quality", PROPERTY_HINT_RANGE, "0,10,1,2"), "set_curve_quality", "get_curve_quality");
 
-	ADD_GROUP("Display","");
 	ClassDB::bind_method(D_METHOD("set_material_unshaded"), &PolyVector::set_material_unshaded);
 	ClassDB::bind_method(D_METHOD("get_material_unshaded"), &PolyVector::get_material_unshaded);
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "Unshaded"), "set_material_unshaded", "get_material_unshaded");
-
-	ClassDB::bind_method(D_METHOD("set_billboard"), &PolyVector::set_billboard);
-	ClassDB::bind_method(D_METHOD("get_billboard"), &PolyVector::get_billboard);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "Billboard", PROPERTY_HINT_ENUM, "Disabled,Enabled,Y-Billboard,Particle"), "set_billboard", "get_billboard");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "unshaded"), "set_material_unshaded", "get_material_unshaded");
 
 	ADD_GROUP("Adjustments","");
 	ClassDB::bind_method(D_METHOD("set_offset"), &PolyVector::set_offset);
 	ClassDB::bind_method(D_METHOD("get_offset"), &PolyVector::get_offset);
-	ADD_PROPERTYNZ(PropertyInfo(Variant::VECTOR2, "Offset"), "set_offset", "get_offset");
+	ADD_PROPERTYNZ(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
 
 	ClassDB::bind_method(D_METHOD("set_unit_scale"), &PolyVector::set_unit_scale);
 	ClassDB::bind_method(D_METHOD("get_unit_scale"), &PolyVector::get_unit_scale);
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Unit Scale", PROPERTY_HINT_RANGE, "0.0, 1000.0, 1.0, 1.0"), "set_unit_scale", "get_unit_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "unit_scale", PROPERTY_HINT_RANGE, "0.0, 1000.0, 1.0, 1.0"), "set_unit_scale", "get_unit_scale");
+
+	ClassDB::bind_method(D_METHOD("set_layer_separation"), &PolyVector::set_layer_separation);
+	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "layer_separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
 
 	ADD_GROUP("Advanced","");
 	ClassDB::bind_method(D_METHOD("set_max_tessellation_angle"), &PolyVector::set_max_tessellation_angle);
 	ClassDB::bind_method(D_METHOD("get_max_tessellation_angle"), &PolyVector::get_max_tessellation_angle);
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Max Tessellation Angle", PROPERTY_HINT_RANGE, "1.0, 10.0, 1.0, 4.0"), "set_max_tessellation_angle", "get_max_tessellation_angle");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "max_tessellation_angle", PROPERTY_HINT_RANGE, "1.0, 10.0, 1.0, 4.0"), "set_max_tessellation_angle", "get_max_tessellation_angle");
 
 	#ifdef POLYVECTOR_DEBUG
-	ADD_GROUP("Debug","");
-	ClassDB::bind_method(D_METHOD("set_layer_separation"), &PolyVector::set_layer_separation);
-	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "Layer Separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
-
 	ClassDB::bind_method(D_METHOD("get_triangulation_time"), &PolyVector::get_triangulation_time);
 	ClassDB::bind_method(D_METHOD("get_mesh_update_time"), &PolyVector::get_mesh_update_time);
 	ClassDB::bind_method(D_METHOD("get_vertex_count"), &PolyVector::get_vertex_count);

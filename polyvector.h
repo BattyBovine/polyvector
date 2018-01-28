@@ -29,14 +29,15 @@ typedef Map<uint16_t, MeshInstance*> MeshInstanceMap;
 
 
 
-class PolyVector : public GeometryInstance {
-	GDCLASS(PolyVector, GeometryInstance)
+class PolyVector : public VisualInstance {
+	GDCLASS(PolyVector, VisualInstance)
 
 public:
 	PolyVector();
 	~PolyVector();
 
 	void draw_current_frame();
+	void clear_mesh_data();
 
 	void set_vector_image(const Ref<JSONVector>&);
 	Ref<JSONVector> get_vector_image() const;
@@ -52,8 +53,6 @@ public:
 	real_t get_layer_separation();
 	void set_material_unshaded(bool);
 	bool get_material_unshaded();
-	void set_billboard(int);
-	int get_billboard();
 
 	void set_max_tessellation_angle(real_t);
 	real_t get_max_tessellation_angle();
