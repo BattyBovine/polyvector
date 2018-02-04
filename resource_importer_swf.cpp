@@ -104,26 +104,18 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 				if(characterid>0) {
 					charactermap[characterid] = charactermap.size()+1;
 					json characterdef;
-					ShapeRemap remap = this->shape_builder(character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
+					ShapeRemap remap = this->shape_builder(dict->FillStyles, dict->LineStyles, character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
 					for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
-						uint16_t shapeno = (s-remap.Shapes.begin());
-						if(remap.Fills[shapeno]==0)	continue;	// Skip holes; we handle those along with the parent shape
+						if(s->fill0==0)	// Skip holes; we handle those along with the parent shape
+							continue;
 						SWF::Shape shape = *s;
+						uint16_t shapeno = (s-remap.Shapes.begin());
 						json shapeout;
-						shapeout[PV_JSON_NAME_FILL] = remap.Fills[shapeno];
+						shapeout[PV_JSON_NAME_FILL] = shape.fill0;
 						//shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
 						shapeout[PV_JSON_NAME_CLOSED] = shape.closed;
-						if(shape.winding == SWF::Shape::Winding::COUNTERCLOCKWISE) {	// Keep enclosing shapes wound clockwise
-							std::vector<SWF::Vertex> reverseverts;
-							SWF::Point controlcache;
-							for(std::vector<SWF::Vertex>::reverse_iterator v=shape.vertices.rbegin(); v!=shape.vertices.rend(); v++) {
-								SWF::Point newctrl = controlcache;
-								controlcache = v->control;
-								v->control = newctrl;
-								reverseverts.push_back(*v);
-							}
-							shape.vertices = reverseverts;
-						}
+						if(shape.winding == SWF::Shape::Winding::COUNTERCLOCKWISE)	// Keep enclosing shapes wound clockwise
+							this->points_reverse(&shape);
 						for(std::vector<SWF::Vertex>::iterator v=shape.vertices.begin(); v!=shape.vertices.end(); v++) {
 							if(v!=shape.vertices.begin()) {
 								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->control.x : double(round(v->control.x*100.0f)/100.0L);
@@ -219,21 +211,35 @@ void ResourceImporterSWF::get_import_options(List<ImportOption> *r_options, int 
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "prettify_text"), false));
 }
 
-ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeList sl)
+ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyleMap fillstyles, SWF::LineStyleMap linestyles, SWF::ShapeList sl)
 {
 	// Stores the results of shape merges, parents and fill rule checks
 	ShapeRemap remap;
 
 	// Merge all connected lines with compatible fills into complete shapes
-	List<List<SWF::ShapeList::iterator> > shapeparts;
+	std::set<uint16_t> left, right;	// Shapes that get used to satisfy fill rules are discarded here
 	for(SWF::ShapeList::iterator s=sl.begin(); s!=sl.end(); s++) {
-		SWF::Shape buildshape = *s;
-		if(buildshape.closed) {
-			remap.Shapes.push_back(buildshape);
+		if(s->closed) {	// Closed shapes should be added immediately
+			remap.Shapes.push_back(*s);
 		} else {
-			List<SWF::ShapeList::iterator> linesegments;
-			this->find_connected_shapes(&buildshape, &linesegments, s, &sl);
-			remap.Shapes.push_back(buildshape);
+			if(left.find(s-sl.begin())==left.end() && s->fill0!=0) {	// Check to the left of the shape first
+				SWF::Shape buildshape = *s;
+				buildshape.winding = SWF::Shape::Winding::COUNTERCLOCKWISE;
+				this->find_connected_shapes(&buildshape, s, &left, &right, sl);
+				if(buildshape.closed) {
+					buildshape.fill1 = buildshape.fill0;
+					remap.Shapes.push_back(buildshape);
+				}
+			}
+			if(right.find(s-sl.begin())==right.end() && s->fill1!=0) {	// Then to the right
+				SWF::Shape buildshape = *s;
+				buildshape.winding = SWF::Shape::Winding::CLOCKWISE;
+				this->find_connected_shapes(&buildshape, s, &left, &right, sl);
+				if(buildshape.closed) {
+					buildshape.fill0 = buildshape.fill1;
+					remap.Shapes.push_back(buildshape);
+				}
+			}
 		}
 	}
 
@@ -267,8 +273,8 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeLis
 				uint16_t vcount = remap.Shapes[containershape].vertices.size();
 				SWF::Vertex *varray = &remap.Shapes[containershape].vertices[0];
 				for(uint16_t v=1; v<vcount; v++) {
-					if(( ( varray[v-1].anchor.y>testpoint.y ) != ( varray[v].anchor.y>testpoint.y ) ) &&
-						( testpoint.x<( varray[v-1].anchor.x-varray[v].anchor.x )*( testpoint.y-varray[v].anchor.y ) / ( varray[v-1].anchor.y-varray[v].anchor.y )+varray[v].anchor.x )) {
+					if(((varray[v-1].anchor.y>testpoint.y) != (varray[v].anchor.y>testpoint.y)) &&
+						(testpoint.x<(varray[v-1].anchor.x-varray[v].anchor.x)*(testpoint.y-varray[v].anchor.y) / (varray[v-1].anchor.y-varray[v].anchor.y )+varray[v].anchor.x)) {
 						contained = !contained;
 					}
 				}
@@ -297,84 +303,53 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeLis
 		// Additionally, if this shape has no fill rules for itself at this point, it's a hole
 		if(parentid<0)	continue;
 		if(remap.Shapes[testshape].winding == SWF::Shape::Winding::CLOCKWISE) {
-			if(remap.Fills[parentid]==0 && remap.Shapes[testshape].fill0!=0)	remap.Fills[parentid] = remap.Shapes[testshape].fill0;
 			if(remap.Shapes[testshape].fill1==0)	remap.Holes[parentid].push_back(testshape);
 		} else {
-			if(remap.Fills[parentid]==0 && remap.Shapes[testshape].fill1!=0)	remap.Fills[parentid] = remap.Shapes[testshape].fill1;
 			if(remap.Shapes[testshape].fill0==0)	remap.Holes[parentid].push_back(testshape);
-		}
-	}
-
-	// Do the final fill checks for shapes that still have none
-	for(uint16_t shapeno=0; shapeno<remap.Shapes.size(); shapeno++) {
-		if(remap.Fills[shapeno]==0) {
-			if(remap.Shapes[shapeno].winding == SWF::Shape::Winding::CLOCKWISE) {
-				if(remap.Shapes[shapeno].fill1!=0)
-					remap.Fills[shapeno] = remap.Shapes[shapeno].fill1;
-			} else {
-				if(remap.Shapes[shapeno].fill0!=0)
-					remap.Fills[shapeno] = remap.Shapes[shapeno].fill0;
-			}
 		}
 	}
 
 	return remap;
 }
 
-void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, List<SWF::ShapeList::iterator> *linesegments, SWF::ShapeList::iterator s, SWF::ShapeList *sl)
+void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::ShapeList::iterator s, std::set<uint16_t> *leftused, std::set<uint16_t> *rightused, SWF::ShapeList sl)
 {
-	uint16_t shapeno = s-sl->begin();
-	SWF::ShapeList::iterator smallest_shape = sl->end();
-	real_t winding_angle = (buildshape->winding==SWF::Shape::Winding::CLOCKWISE) ? 0.0f : Math_INF;
-	Vector2 C(buildshape->vertices.back().anchor.x, buildshape->vertices.back().anchor.y);	// Calculate the angle of the intersection between the two lines
-	Vector2 A((buildshape->vertices.rbegin()+1)->anchor.x, (buildshape->vertices.rbegin()+1)->anchor.y);
-	Vector2 a = (A-C).normalized();
-	for(SWF::ShapeList::iterator s2=sl->begin(); s2!=sl->end(); s2++) {
-		uint16_t shape2no = s2-sl->begin();
-		if(s2==s || s2->closed || linesegments->find(s2))
+	SWF::ShapeList::iterator next_shape;
+	for(next_shape=sl.begin(); next_shape!=sl.end(); next_shape++) {
+		if(next_shape==s || next_shape->closed)
 			continue;
-		Vector2 B;
-		if(this->points_equal(buildshape->vertices.back(), s2->vertices.back()))	// If attached in reverse, get the last line
-			B = Vector2((s2->vertices.rbegin()+1)->anchor.x, (s2->vertices.rbegin()+1)->anchor.y);
-		else if(this->points_equal(buildshape->vertices.back(), s2->vertices.front()))	// If attached in sequence, get the first line
-			B = Vector2(s2->vertices[1].anchor.x, s2->vertices[1].anchor.y);
-		else	continue;	// If the shape isn't actually attached, skip
-		Vector2 b = (B-C).normalized();
-		
-		real_t Ø = atan2(b.y, b.x) - atan2(a.y, a.x);
-		if(Ø<0)	Ø += Math_TAU;
-		if(buildshape->winding==SWF::Shape::Winding::CLOCKWISE && Ø>winding_angle) {
-			winding_angle = Ø;
-			smallest_shape = s2;
-		} else if(buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE && Ø<winding_angle) {
-			winding_angle = Ø;
-			smallest_shape = s2;
-		} else if(buildshape->winding==SWF::Shape::Winding::NONE) {
-			if(buildshape->fill1!=0 && Ø>winding_angle) {	// If there is a fill1 defined, assume clockwise rotation
-				buildshape->winding = SWF::Shape::Winding::CLOCKWISE;
-				winding_angle = Ø;
-				smallest_shape = s2;
-			} else if(Ø<winding_angle) {	// Otherwise, assume counter-clockwise rotation
-				buildshape->winding = SWF::Shape::Winding::COUNTERCLOCKWISE;
-				winding_angle = Ø;
-				smallest_shape = s2;
-			}
+		if(this->points_equal(buildshape->vertices.back(), next_shape->vertices.back())) {	// If attached in reverse, get the opposite fill from usual
+			if((buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE && buildshape->fill0==next_shape->fill1) ||
+				(buildshape->winding==SWF::Shape::Winding::CLOCKWISE && buildshape->fill1==next_shape->fill0))
+				break;
+		} else if(this->points_equal(buildshape->vertices.back(), next_shape->vertices.front())) {	// If attached in sequence, get the first line
+			if((buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE && buildshape->fill0==next_shape->fill0) ||
+				(buildshape->winding==SWF::Shape::Winding::CLOCKWISE && buildshape->fill1==next_shape->fill1))
+				break;
 		}
+		else	continue;	// If the shape isn't actually attached, skip
 	}
-	if(smallest_shape==sl->end())	// If no connected shapes were found, this is the end
+	if(next_shape==sl.end())	// If no connected shapes were found, this is the end
 		return;
-	linesegments->push_back(smallest_shape);
-	SWF::Shape mergeshape = *smallest_shape;
-	if(this->points_equal(buildshape->vertices.back(), mergeshape.vertices.back()))
+	SWF::Shape mergeshape = *next_shape;
+	if(this->points_equal(buildshape->vertices.back(), mergeshape.vertices.back())) {
 		this->points_reverse(&mergeshape);
-	if(buildshape->fill0==0)	buildshape->fill0 = mergeshape.fill0;
-	if(buildshape->fill1==0)	buildshape->fill1 = mergeshape.fill1;
+		if(buildshape->winding==SWF::Shape::Winding::CLOCKWISE)
+			leftused->insert(next_shape-sl.begin());
+		else if(buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE)
+			rightused->insert(next_shape-sl.begin());
+	} else {
+		if(buildshape->winding==SWF::Shape::Winding::CLOCKWISE)
+			rightused->insert(next_shape-sl.begin());
+		else if(buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE)
+			leftused->insert(next_shape-sl.begin());
+	}
 	buildshape->vertices.insert(buildshape->vertices.end(), mergeshape.vertices.begin()+1, mergeshape.vertices.end());
 
 	if(this->points_equal(buildshape->vertices.back(), buildshape->vertices.front()))
 		buildshape->closed = true;
 	else
-		this->find_connected_shapes(buildshape, linesegments, smallest_shape, sl);
+		this->find_connected_shapes(buildshape, next_shape, leftused, rightused, sl);
 }
 
 inline bool ResourceImporterSWF::points_equal(SWF::Vertex &a, SWF::Vertex &b)

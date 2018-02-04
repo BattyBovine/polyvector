@@ -7,6 +7,7 @@ using json = nlohmann::json;
 
 #include <vector>
 #include <map>
+#include <set>
 #include <io/resource_import.h>
 #include <io/resource_loader.h>
 #include <io/resource_saver.h>
@@ -94,11 +95,10 @@ private:
 	struct ShapeRemap
 	{
 		SWF::ShapeList Shapes;
-		std::map<uint16_t,uint16_t> Fills;
 		std::map<uint16_t,std::list<uint16_t> > Holes;
 	};
-	ShapeRemap shape_builder(SWF::ShapeList);
-	void find_connected_shapes(SWF::Shape*, List<SWF::ShapeList::iterator>*, SWF::ShapeList::iterator, SWF::ShapeList*);
+	ShapeRemap shape_builder(SWF::FillStyleMap, SWF::LineStyleMap, SWF::ShapeList);
+	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList);
 	inline bool points_equal(SWF::Vertex&, SWF::Vertex&);
 	inline void points_reverse(SWF::Shape*);
 };
