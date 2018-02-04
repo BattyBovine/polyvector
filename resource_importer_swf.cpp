@@ -31,8 +31,6 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 {
 	FileAccess *swf = FileAccess::open(p_source_file, FileAccess::READ);
 	ERR_FAIL_COND_V(!swf, ERR_FILE_CANT_READ);
-	FileAccess *pvimport = FileAccess::open(p_save_path + ".jvec", FileAccess::WRITE);
-	ERR_FAIL_COND_V(!pvimport, ERR_FILE_CANT_WRITE);
 
 	size_t xmllen = swf->get_len();
 	ERR_FAIL_COND_V(!xmllen, ERR_CANT_OPEN);
@@ -115,7 +113,7 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						shapeout[PV_JSON_NAME_FILL] = remap.Fills[shapeno];
 						//shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
 						shapeout[PV_JSON_NAME_CLOSED] = shape.closed;
-						if(!shape.clockwise) {	// Keep enclosing shapes wound clockwise
+						if(shape.winding == SWF::Shape::Winding::COUNTERCLOCKWISE) {	// Keep enclosing shapes wound clockwise
 							std::vector<SWF::Vertex> reverseverts;
 							SWF::Point controlcache;
 							for(std::vector<SWF::Vertex>::reverse_iterator v=shape.vertices.rbegin(); v!=shape.vertices.rend(); v++) {
@@ -139,7 +137,7 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						for(std::list<uint16_t>::iterator h=remap.Holes[shapeno].begin(); h!=remap.Holes[shapeno].end(); h++) {
 							uint16_t hole = *h;
 							json holeverts;
-							if(remap.Shapes[hole].clockwise) {	// Keep holes wound counter-clockwise
+							if(remap.Shapes[hole].winding == SWF::Shape::Winding::CLOCKWISE) {	// Keep holes wound counter-clockwise
 								std::vector<SWF::Vertex> reverseverts;
 								SWF::Point controlcache;
 								for(std::vector<SWF::Vertex>::reverse_iterator v=remap.Shapes[hole].vertices.rbegin(); v!=remap.Shapes[hole].vertices.rend(); v++) {
@@ -192,7 +190,10 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 			}
 			if(jdisplaylist.size()>0) root[PV_JSON_NAME_FRAMES] += jdisplaylist;
 		}
+		root[PV_JSON_NAME_FPS] = bool(p_options["binary"]) ? swfparser->get_properties()->framerate : double(round(swfparser->get_properties()->framerate*100) / 100.0L);
 
+		FileAccess *pvimport = FileAccess::open(p_save_path + ".jvec", FileAccess::WRITE);
+		ERR_FAIL_COND_V(!pvimport, ERR_FILE_CANT_WRITE);
 		if(bool(p_options["binary"])) {
 			std::vector<uint8_t> jsonout = json::to_msgpack(root);
 			pvimport->store_buffer(jsonout.data(), jsonout.size());
@@ -200,12 +201,12 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 			std::string out = root.dump(bool(p_options["prettify_text"])?2:-1);
 			pvimport->store_buffer((const uint8_t*)out.c_str(), out.size());
 		}
+		pvimport->close();
+		memdelete(pvimport);
 
 		if(swfparser)	delete swfparser;
 		if(swfdata)		delete swfdata;
 	}
-	pvimport->close();
-	memdelete(pvimport);
 	swf->close();
 	memdelete(swf);
 
@@ -223,53 +224,16 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeLis
 	// Stores the results of shape merges, parents and fill rule checks
 	ShapeRemap remap;
 
-	// Merge lines to form enclosed shapes wherever possible
-	std::map<uint16_t,std::unordered_set<uint16_t> > mergemap;
+	// Merge all connected lines with compatible fills into complete shapes
+	List<List<SWF::ShapeList::iterator> > shapeparts;
 	for(SWF::ShapeList::iterator s=sl.begin(); s!=sl.end(); s++) {
-		if(s->closed) {
-			remap.Shapes.push_back(*s);
+		SWF::Shape buildshape = *s;
+		if(buildshape.closed) {
+			remap.Shapes.push_back(buildshape);
 		} else {
-			for(SWF::ShapeList::iterator s2=(s+1); s2!=sl.end(); s2++) {
-				if(s2->closed)	continue;
-				if((round(s->vertices.back().anchor.x*100.0f)==round(s2->vertices.front().anchor.x*100.0f) &&	// Match vertices at each end of two open shapes to see if they fit
-					round(s->vertices.back().anchor.y*100.0f)==round(s2->vertices.front().anchor.y*100.0f))) {
-					SWF::Shape mergedshape = *s;
-					if(round(s->vertices.front().anchor.x*100.0f) == round(s2->vertices.back().anchor.x*100.0f) &&	// Shape is closed if the new merge will make a complete shape
-						round(s->vertices.front().anchor.y*100.0f) == round(s2->vertices.back().anchor.y*100.0f))
-						mergedshape.closed = true;
-					mergedshape.vertices.insert(mergedshape.vertices.end(), s2->vertices.begin()+1, s2->vertices.end());	// Remove the first endpoint from shape 2 while merging
-					uint16_t newshapeno = remap.Shapes.size();
-					mergemap[newshapeno].insert(s-sl.begin());
-					mergemap[newshapeno].insert(s2-sl.begin());
-					remap.Shapes.push_back(mergedshape);
-				}
-			}
-		}
-	}
-	// Iterate over the shape merges and calculate fill rules for the new shapes
-	for(uint16_t shapeno=0; shapeno<mergemap.size(); shapeno++) {
-		if(remap.Fills[shapeno]!=0)	continue;
-		for(std::unordered_set<uint16_t>::iterator m=mergemap[shapeno].begin(); m!=mergemap[shapeno].end(); m++) {
-			uint16_t mergerecord = *m;
-			if(remap.Shapes[shapeno].fill0==0)	remap.Shapes[shapeno].fill0 = sl[mergerecord].fill0;	// Also merge old fills into new shape for later checks
-			if(remap.Shapes[shapeno].fill1==0)	remap.Shapes[shapeno].fill1 = sl[mergerecord].fill1;
-			if(sl[mergerecord].clockwise) {
-				if(sl[mergerecord].fill1!=0) {
-					remap.Fills[shapeno] = sl[mergerecord].fill1;
-					break;
-				} else if(sl[mergerecord].fill1!=0) {
-					remap.Fills[shapeno] = sl[mergerecord].fill1;
-					break;
-				}
-			} else {
-				if(sl[mergerecord].fill0!=0) {
-					remap.Fills[shapeno] = sl[mergerecord].fill0;
-					break;
-				} else if(sl[mergerecord].fill0!=0) {
-					remap.Fills[shapeno] = sl[mergerecord].fill0;
-					break;
-				}
-			}
+			List<SWF::ShapeList::iterator> linesegments;
+			this->find_connected_shapes(&buildshape, &linesegments, s, &sl);
+			remap.Shapes.push_back(buildshape);
 		}
 	}
 
@@ -332,7 +296,7 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeLis
 		// Satisfy fill rules for the containing shape's parent if necessary
 		// Additionally, if this shape has no fill rules for itself at this point, it's a hole
 		if(parentid<0)	continue;
-		if(remap.Shapes[testshape].clockwise) {
+		if(remap.Shapes[testshape].winding == SWF::Shape::Winding::CLOCKWISE) {
 			if(remap.Fills[parentid]==0 && remap.Shapes[testshape].fill0!=0)	remap.Fills[parentid] = remap.Shapes[testshape].fill0;
 			if(remap.Shapes[testshape].fill1==0)	remap.Holes[parentid].push_back(testshape);
 		} else {
@@ -344,15 +308,98 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::ShapeLis
 	// Do the final fill checks for shapes that still have none
 	for(uint16_t shapeno=0; shapeno<remap.Shapes.size(); shapeno++) {
 		if(remap.Fills[shapeno]==0) {
-			if(remap.Shapes[shapeno].clockwise) {
-				if(remap.Shapes[shapeno].fill1!=0)	remap.Fills[shapeno] = remap.Shapes[shapeno].fill1;
+			if(remap.Shapes[shapeno].winding == SWF::Shape::Winding::CLOCKWISE) {
+				if(remap.Shapes[shapeno].fill1!=0)
+					remap.Fills[shapeno] = remap.Shapes[shapeno].fill1;
 			} else {
-				if(remap.Shapes[shapeno].fill0!=0)	remap.Fills[shapeno] = remap.Shapes[shapeno].fill0;
+				if(remap.Shapes[shapeno].fill0!=0)
+					remap.Fills[shapeno] = remap.Shapes[shapeno].fill0;
 			}
 		}
 	}
 
 	return remap;
+}
+
+void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, List<SWF::ShapeList::iterator> *linesegments, SWF::ShapeList::iterator s, SWF::ShapeList *sl)
+{
+	uint16_t shapeno = s-sl->begin();
+	SWF::ShapeList::iterator smallest_shape = sl->end();
+	real_t winding_angle = (buildshape->winding==SWF::Shape::Winding::CLOCKWISE) ? 0.0f : Math_INF;
+	Vector2 C(buildshape->vertices.back().anchor.x, buildshape->vertices.back().anchor.y);	// Calculate the angle of the intersection between the two lines
+	Vector2 A((buildshape->vertices.rbegin()+1)->anchor.x, (buildshape->vertices.rbegin()+1)->anchor.y);
+	Vector2 a = (A-C).normalized();
+	for(SWF::ShapeList::iterator s2=sl->begin(); s2!=sl->end(); s2++) {
+		uint16_t shape2no = s2-sl->begin();
+		if(s2==s || s2->closed || linesegments->find(s2))
+			continue;
+		Vector2 B;
+		if(this->points_equal(buildshape->vertices.back(), s2->vertices.back()))	// If attached in reverse, get the last line
+			B = Vector2((s2->vertices.rbegin()+1)->anchor.x, (s2->vertices.rbegin()+1)->anchor.y);
+		else if(this->points_equal(buildshape->vertices.back(), s2->vertices.front()))	// If attached in sequence, get the first line
+			B = Vector2(s2->vertices[1].anchor.x, s2->vertices[1].anchor.y);
+		else	continue;	// If the shape isn't actually attached, skip
+		Vector2 b = (B-C).normalized();
+		
+		real_t Ø = atan2(b.y, b.x) - atan2(a.y, a.x);
+		if(Ø<0)	Ø += Math_TAU;
+		if(buildshape->winding==SWF::Shape::Winding::CLOCKWISE && Ø>winding_angle) {
+			winding_angle = Ø;
+			smallest_shape = s2;
+		} else if(buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE && Ø<winding_angle) {
+			winding_angle = Ø;
+			smallest_shape = s2;
+		} else if(buildshape->winding==SWF::Shape::Winding::NONE) {
+			if(buildshape->fill1!=0 && Ø>winding_angle) {	// If there is a fill1 defined, assume clockwise rotation
+				buildshape->winding = SWF::Shape::Winding::CLOCKWISE;
+				winding_angle = Ø;
+				smallest_shape = s2;
+			} else if(Ø<winding_angle) {	// Otherwise, assume counter-clockwise rotation
+				buildshape->winding = SWF::Shape::Winding::COUNTERCLOCKWISE;
+				winding_angle = Ø;
+				smallest_shape = s2;
+			}
+		}
+	}
+	if(smallest_shape==sl->end())	// If no connected shapes were found, this is the end
+		return;
+	linesegments->push_back(smallest_shape);
+	SWF::Shape mergeshape = *smallest_shape;
+	if(this->points_equal(buildshape->vertices.back(), mergeshape.vertices.back()))
+		this->points_reverse(&mergeshape);
+	if(buildshape->fill0==0)	buildshape->fill0 = mergeshape.fill0;
+	if(buildshape->fill1==0)	buildshape->fill1 = mergeshape.fill1;
+	buildshape->vertices.insert(buildshape->vertices.end(), mergeshape.vertices.begin()+1, mergeshape.vertices.end());
+
+	if(this->points_equal(buildshape->vertices.back(), buildshape->vertices.front()))
+		buildshape->closed = true;
+	else
+		this->find_connected_shapes(buildshape, linesegments, smallest_shape, sl);
+}
+
+inline bool ResourceImporterSWF::points_equal(SWF::Vertex &a, SWF::Vertex &b)
+{
+	return (
+		int32_t(round(a.anchor.x*20.0f))==int32_t(round(b.anchor.x*20.0f)) &&
+		int32_t(round(a.anchor.y*20.0f))==int32_t(round(b.anchor.y*20.0f))
+		);
+}
+
+inline void ResourceImporterSWF::points_reverse(SWF::Shape *s)
+{
+	std::vector<SWF::Vertex> reverseverts;
+	SWF::Point controlcache;
+	for(std::vector<SWF::Vertex>::reverse_iterator v=s->vertices.rbegin(); v!=s->vertices.rend(); v++) {
+		SWF::Point newctrl = controlcache;
+		controlcache = v->control;
+		v->control = newctrl;
+		reverseverts.push_back(*v);
+	}
+	s->vertices = reverseverts;
+	s->winding = (s->winding==SWF::Shape::Winding::CLOCKWISE) ? SWF::Shape::Winding::COUNTERCLOCKWISE : SWF::Shape::Winding::CLOCKWISE;
+	uint16_t fill1 = s->fill0;
+	s->fill0 = s->fill1;
+	s->fill1 = fill1;
 }
 #endif
 
@@ -442,6 +489,8 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 		}
 		vectordata->add_frame(frame);
 	}
+
+	vectordata->set_fps(jsondata[PV_JSON_NAME_FPS]);
 
 	if(r_error)	*r_error = OK;
 

@@ -2,7 +2,7 @@
 
 PolyVector::PolyVector()
 {
-	this->iFrame = 0;
+	this->fTime = 0.0f;
 	this->fUnitScale = 1.0f;
 	this->v2Offset = Vector2( 0.0f, 0.0f );
 	this->iCurveQuality = 2;
@@ -32,14 +32,15 @@ PolyVector::~PolyVector()
 
 void PolyVector::draw_current_frame()
 {
-	if(this->iFrame >= this->lFrameData.size())	return;
+	if(this->dataVectorFile.is_null())	return;
+	uint16_t frameno = CLAMP((this->fFps*this->fTime), 0, this->lFrameData.size()-1);
 	#ifdef POLYVECTOR_DEBUG
 	uint64_t debugtimer = this->os->get_ticks_usec();
 	#endif
 	for(MeshInstanceMap::Element *m=this->mapMeshDisplay.front(); m; m=m->next())
 		m->get()->set_visible(false);
 	float layer_separation = 0.0f;
-	PolyVectorFrame *framedata = &this->lFrameData[this->iFrame];
+	PolyVectorFrame *framedata = &this->lFrameData[frameno];
 	for(PolyVectorFrame::Element *c=framedata->front(); c; c=c->next()) {
 		PolyVectorSymbol symbol = c->get();
 		if(!this->mapMeshDictionary.has(symbol.id)) {
@@ -136,32 +137,56 @@ void PolyVector::clear_mesh_data()
 	}
 }
 
+void PolyVector::clear_mesh_instances()
+{
+	int32_t childcount = this->get_child_count();
+	for(int32_t i=childcount-1; i>=0; i--) {
+		MeshInstance *mi = Node::cast_to<MeshInstance>(this->get_child(i));
+		if(mi) this->remove_child(mi);
+	}
+	for(MeshInstanceMap::Element *mim=this->mapMeshDisplay.front(); mim; mim=mim->next())
+		memdelete<MeshInstance>(mim->get());
+	this->mapMeshDisplay.clear();
+}
+
 
 
 void PolyVector::set_vector_image(const Ref<JSONVector> &p_vector)
 {
-	if(p_vector == this->dataVectorFile)	return;
+	if(p_vector == this->dataVectorFile)
+		return;
 	this->dataVectorFile = p_vector;
 	if(this->dataVectorFile.is_null())
 		return;
+	this->fFps = this->dataVectorFile->get_fps();
 	this->lFrameData = this->dataVectorFile->get_frames();
 	this->lDictionaryData = this->dataVectorFile->get_dictionary();
+
+	this->clear_mesh_instances();
 	this->clear_mesh_data();
-	this->set_frame(0);
+
+	AnimationPlayer *animplayer = NULL;
+	int32_t childcount = this->get_child_count();
+	for(int32_t i=0; i<childcount; i++) {
+		animplayer = Node::cast_to<AnimationPlayer>(this->get_child(i));
+		if(animplayer)	break;
+	}
+
+	this->set_time(0.0f);
 }
 Ref<JSONVector> PolyVector::get_vector_image() const
 {
 	return this->dataVectorFile;
 }
 
-void PolyVector::set_frame(uint16_t f)
+void PolyVector::set_time(real_t f)
 {
-	this->iFrame = CLAMP(f,0,this->lFrameData.size()-1);
+	this->fTime = f;
 	this->draw_current_frame();
 }
-uint16_t PolyVector::get_frame()
+real_t PolyVector::get_time()
 {
-	return this->iFrame;
+	return this->fTime;
 }
 
 void PolyVector::set_curve_quality(int8_t t)
@@ -268,9 +293,9 @@ void PolyVector::_bind_methods()
 	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "vector", PROPERTY_HINT_RESOURCE_TYPE, "JSONVector"), "set_vector_image", "get_vector_image");
 
 	ADD_GROUP("Display","");
-	ClassDB::bind_method(D_METHOD("set_frame"), &PolyVector::set_frame);
-	ClassDB::bind_method(D_METHOD("get_frame"), &PolyVector::get_frame);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "frame", PROPERTY_HINT_RANGE, "0,65535,1,0"), "set_frame", "get_frame");
+	ClassDB::bind_method(D_METHOD("set_time"), &PolyVector::set_time);
+	ClassDB::bind_method(D_METHOD("get_time"), &PolyVector::get_time);
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "timecode", PROPERTY_HINT_RANGE, "0.0, 1000.0, 0.01, 0.0"), "set_time", "get_time");
 
 	ClassDB::bind_method(D_METHOD("set_curve_quality"), &PolyVector::set_curve_quality);
 	ClassDB::bind_method(D_METHOD("get_curve_quality"), &PolyVector::get_curve_quality);

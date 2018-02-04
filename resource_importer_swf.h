@@ -7,7 +7,6 @@ using json = nlohmann::json;
 
 #include <vector>
 #include <map>
-#include <unordered_set>
 #include <io/resource_import.h>
 #include <io/resource_loader.h>
 #include <io/resource_saver.h>
@@ -99,6 +98,9 @@ private:
 		std::map<uint16_t,std::list<uint16_t> > Holes;
 	};
 	ShapeRemap shape_builder(SWF::ShapeList);
+	void find_connected_shapes(SWF::Shape*, List<SWF::ShapeList::iterator>*, SWF::ShapeList::iterator, SWF::ShapeList*);
+	inline bool points_equal(SWF::Vertex&, SWF::Vertex&);
+	inline void points_reverse(SWF::Shape*);
 };
 #endif
 
@@ -121,6 +123,7 @@ class JSONVector : public Resource
 
 	List<PolyVectorCharacter> dictionary;
 	List<PolyVectorFrame> frames;
+	real_t fps;
 
 public:
 	JSONVector() {}
@@ -131,8 +134,12 @@ public:
 	void add_frame(PolyVectorFrame p_data) { this->frames.push_back(p_data); }
 	PolyVectorFrame get_frame(uint16_t i) { return this->frames[i]; }
 	List<PolyVectorFrame> get_frames() { return this->frames; }
+
+	void set_fps(real_t f) { this->fps = f; }
+	real_t get_fps() { return this->fps; }
 };
 
+#define PV_JSON_NAME_FPS		"FPS"
 #define PV_JSON_NAME_LIBRARY	"Library"
 #define PV_JSON_NAME_CHARACTERS	"Characters"
 #define PV_JSON_NAME_FILL		"Fill"

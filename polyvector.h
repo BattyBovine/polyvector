@@ -6,6 +6,7 @@
 
 #include <core/os/os.h>
 #include <scene/3d/mesh_instance.h>
+#include <scene/animation/animation_player.h>
 #include <scene/resources/curve.h>
 #include <thirdparty/nanosvg/nanosvg.h>
 
@@ -38,11 +39,12 @@ public:
 
 	void draw_current_frame();
 	void clear_mesh_data();
+	void clear_mesh_instances();
 
 	void set_vector_image(const Ref<JSONVector>&);
 	Ref<JSONVector> get_vector_image() const;
-	void set_frame(uint16_t);
-	uint16_t get_frame();
+	void set_time(real_t);
+	real_t get_time();
 	void set_curve_quality(int8_t);
 	int8_t get_curve_quality();
 	void set_unit_scale(real_t);
@@ -81,7 +83,8 @@ private:
 
 	List<PolyVectorFrame> lFrameData;
 	List<PolyVectorCharacter> lDictionaryData;
-	uint16_t iFrame;
+	real_t fTime;
+	real_t fFps;
 	Vector2 v2Offset;
 	int8_t iCurveQuality;
 
