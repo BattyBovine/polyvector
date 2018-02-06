@@ -106,10 +106,10 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 					json characterdef;
 					ShapeRemap remap = this->shape_builder(dict->FillStyles, dict->LineStyles, character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
 					for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
-						if(s->fill0==0)	// Skip holes; we handle those along with the parent shape
-							continue;
 						SWF::Shape shape = *s;
-						uint16_t shapeno = (s-remap.Shapes.begin());
+						if(shape.fill0==0)	// Skip holes; we handle those along with the parent shape
+							continue;
+						//uint16_t shapeno = (s-remap.Shapes.cbegin());
 						json shapeout;
 						shapeout[PV_JSON_NAME_FILL] = shape.fill0;
 						//shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
@@ -126,26 +126,17 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->anchor.x : double(round(v->anchor.x*100.0f)/100.0L);
 							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->anchor.y : double(round(v->anchor.y*100.0f)/100.0L);
 						}
-						for(std::list<uint16_t>::iterator h=remap.Holes[shapeno].begin(); h!=remap.Holes[shapeno].end(); h++) {
-							uint16_t hole = *h;
+						for(std::list<SWF::ShapeList::iterator>::iterator h=remap.Holes[s].begin(); h!=remap.Holes[s].end(); h++) {
+							SWF::Shape hole = (*(*h));
 							json holeverts;
-							if(remap.Shapes[hole].winding == SWF::Shape::Winding::CLOCKWISE) {	// Keep holes wound counter-clockwise
-								std::vector<SWF::Vertex> reverseverts;
-								SWF::Point controlcache;
-								for(std::vector<SWF::Vertex>::reverse_iterator v=remap.Shapes[hole].vertices.rbegin(); v!=remap.Shapes[hole].vertices.rend(); v++) {
-									SWF::Point newctrl = controlcache;
-									controlcache = v->control;
-									v->control = newctrl;
-									reverseverts.push_back(*v);
-								}
-								remap.Shapes[hole].vertices = reverseverts;
-							}
-							for(std::vector<SWF::Vertex>::iterator hv=remap.Shapes[hole].vertices.begin(); hv!=remap.Shapes[hole].vertices.end(); hv++) {
-								if(hv!=remap.Shapes[hole].vertices.begin()) {
+							if(hole.winding == SWF::Shape::Winding::CLOCKWISE)	// Keep holes wound counter-clockwise
+								this->points_reverse(&hole);
+							for(std::vector<SWF::Vertex>::iterator hv=hole.vertices.begin(); hv!=hole.vertices.end(); hv++) {
+								if(hv!=hole.vertices.begin()) {
 									holeverts += bool(p_options["binary"]) ? hv->control.x : double(round(hv->control.x*100.0f)/100.0L);
 									holeverts += bool(p_options["binary"]) ? hv->control.y : double(round(hv->control.y*100.0f)/100.0L);
 								}
-								if(remap.Shapes[hole].closed==true && hv==(remap.Shapes[hole].vertices.end()-1))
+								if(hole.closed==true && hv==(hole.vertices.end()-1))
 									break;
 								holeverts += bool(p_options["binary"]) ? hv->anchor.x : double(round(hv->anchor.x*100.0f)/100.0L);
 								holeverts += bool(p_options["binary"]) ? hv->anchor.y : double(round(hv->anchor.y*100.0f)/100.0L);
@@ -217,9 +208,11 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 	ShapeRemap remap;
 
 	// Merge all connected lines with compatible fills into complete shapes
+	std::list<uint16_t> holetests;
 	std::set<uint16_t> left, right;	// Shapes that get used to satisfy fill rules are discarded here
 	for(SWF::ShapeList::iterator s=sl.begin(); s!=sl.end(); s++) {
-		if(s->closed) {	// Closed shapes should be added immediately
+		if(s->closed) {
+			holetests.push_back(remap.Shapes.size());	// Closed shapes should be added immediately, with their left/right fills intact
 			remap.Shapes.push_back(*s);
 		} else {
 			if(left.find(s-sl.begin())==left.end() && s->fill0!=0) {	// Check to the left of the shape first
@@ -242,9 +235,9 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 			}
 		}
 	}
-
+	
 	// Calculate bounding boxes for each new shape so we can do size comparisons and sorting
-	std::vector<SWF::Rect> aabb;
+	std::map<SWF::ShapeList::iterator, SWF::Rect> aabb;
 	for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
 		SWF::Rect bb;
 		for(std::vector<SWF::Vertex>::iterator v=s->vertices.begin(); v!=s->vertices.end(); v++) {
@@ -258,57 +251,82 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 			if(bb.ymin>v->anchor.y)	bb.ymin=v->anchor.y;
 			if(bb.ymax<v->anchor.y)	bb.ymax=v->anchor.y;
 		}
-		aabb.push_back(bb);
+		aabb[s] = bb;
 	}
-	// Find shapes that are enclosed within other shapes
-	std::map<uint16_t,int32_t> parentshapes;
-	for(uint16_t testshape=0; testshape<remap.Shapes.size(); testshape++) {
-		std::list<uint16_t> enclosingshapes;
-		for(uint16_t containershape=0; containershape<remap.Shapes.size(); containershape++) {
-			if(containershape==testshape || !remap.Shapes[containershape].closed)	continue;
+	// Find complete shapes that may be used to satisfy odd fill rules or create holes
+	for(std::list<uint16_t>::iterator t=holetests.begin(); t!=holetests.end(); t++) {
+		SWF::ShapeList::iterator testshape = remap.Shapes.begin()+(*t);
+		std::vector<SWF::ShapeList::iterator> enclosingshapes;
+		// Do a simple bounding box test to see if one shape encloses another
+		//for(SWF::ShapeList::iterator containershape=remap.Shapes.begin(); containershape!=remap.Shapes.end(); containershape++) {
+		//	if(containershape==testshape || !containershape->closed)
+		//		continue;
+		//	if((aabb[testshape].xmin>aabb[containershape].xmin) &&
+		//		(aabb[testshape].xmax<aabb[containershape].xmax) &&
+		//		(aabb[testshape].ymin>aabb[containershape].ymin) &&
+		//		(aabb[testshape].ymax<aabb[containershape].ymax)) {
+		//		enclosingshapes.push_back(containershape);
+		//	}
+		//}
+		for(SWF::ShapeList::iterator containershape=remap.Shapes.begin(); containershape!=remap.Shapes.end(); containershape++) {
+			if(containershape==testshape || !containershape->closed)
+				continue;
+			uint16_t vcount = containershape->vertices.size();
+			SWF::Vertex *varray = &containershape->vertices[0];
+			// Check if the points of our test shape are within the bounds of another shape
 			bool contained = false;
-			// Check all points, since we're not calculating curves for the shape, and any one point in another means it's guaranteed to be fully inside
-			for(uint16_t v=0; v<remap.Shapes[testshape].vertices.size(); v++) {
-				SWF::Point testpoint = remap.Shapes[testshape].vertices[v].anchor;
-				uint16_t vcount = remap.Shapes[containershape].vertices.size();
-				SWF::Vertex *varray = &remap.Shapes[containershape].vertices[0];
-				for(uint16_t v=1; v<vcount; v++) {
-					if(((varray[v-1].anchor.y>testpoint.y) != (varray[v].anchor.y>testpoint.y)) &&
-						(testpoint.x<(varray[v-1].anchor.x-varray[v].anchor.x)*(testpoint.y-varray[v].anchor.y) / (varray[v-1].anchor.y-varray[v].anchor.y )+varray[v].anchor.x)) {
+			for(std::vector<SWF::Vertex>::iterator vinner=testshape->vertices.begin(); vinner!=testshape->vertices.end(); vinner++) {
+				SWF::Point testpoint = vinner->anchor;
+				for(uint16_t vouter=1; vouter<vcount; vouter++) {
+					if(((int32_t(round(varray[vouter-1].anchor.y*20.0f))>int32_t(round(testpoint.y*20.0f))) != (int32_t(round(varray[vouter].anchor.y*20.0f))>int32_t(round(testpoint.y*20.0f)))) &&
+						(int32_t(round(testpoint.x*20.0f))<int32_t(round((varray[vouter-1].anchor.x-varray[vouter].anchor.x)*20.0f))*int32_t(round((testpoint.y-varray[vouter].anchor.y)*20.0f)) / int32_t(round((varray[vouter-1].anchor.y-varray[vouter].anchor.y)*20.0f))+int32_t(round(varray[vouter].anchor.x*20.0f)))) {
 						contained = !contained;
 					}
 				}
-				if(contained)	break;
+				if(contained) {
+					enclosingshapes.push_back(containershape);
+					break;
+				}
 			}
-			if(contained)	enclosingshapes.push_back(containershape);
 		}
 		// Find the smallest shape that encloses our test shape; this is the parent
 		SWF::Rect smallestparent;
-		int32_t parentid = -1;
-		for(std::list<uint16_t>::iterator s=enclosingshapes.begin(); s!=enclosingshapes.end(); s++) {
-			uint16_t parent = *s;
+		SWF::ShapeList::iterator parent = remap.Shapes.end();
+		for(std::vector<SWF::ShapeList::iterator>::iterator s=enclosingshapes.begin(); s!=enclosingshapes.end(); s++) {
 			if(s==enclosingshapes.begin()) {
+				parent = *s;
 				smallestparent = aabb[parent];
-				parentid = parent;
-				continue;
-			}
-			if((aabb[parent].xmax-aabb[parent].xmin)<(smallestparent.xmax-smallestparent.xmin) ||
-				(aabb[parent].ymax-aabb[parent].ymin)<(smallestparent.ymax-smallestparent.ymin)) {
-				smallestparent = aabb[parent];
-				parentid = parent;
+			} else {
+				if((aabb[parent].xmax-aabb[parent].xmin)<(smallestparent.xmax-smallestparent.xmin) ||
+					(aabb[parent].ymax-aabb[parent].ymin)<(smallestparent.ymax-smallestparent.ymin)) {
+					parent = *s;
+					smallestparent = aabb[parent];
+				}
 			}
 		}
-		parentshapes[testshape] = parentid;
-		// Satisfy fill rules for the containing shape's parent if necessary
-		// Additionally, if this shape has no fill rules for itself at this point, it's a hole
-		if(parentid<0)	continue;
-		if(remap.Shapes[testshape].winding == SWF::Shape::Winding::CLOCKWISE) {
-			if(remap.Shapes[testshape].fill1==0)	remap.Holes[parentid].push_back(testshape);
-		} else {
-			if(remap.Shapes[testshape].fill0==0)	remap.Holes[parentid].push_back(testshape);
+		if(parent!=remap.Shapes.end()) {
+			remap.Holes[parent].push_back(testshape);
+			// Satisfy fill rules for the child shape's parent if necessary
+			if(testshape->winding == SWF::Shape::Winding::CLOCKWISE && testshape->fill0!=0)	// Clockwise holes have the parent's fill on the left
+				parent->fill0 = parent->fill1 = testshape->fill0;
+			else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE && testshape->fill1!=0)	// Counterclockwise holes have the parent's fill on the right
+				parent->fill0 = parent->fill1 = testshape->fill1;
+		} else {	// If we found no enclosing shapes, then this is not a hole
+			if(testshape->winding == SWF::Shape::Winding::CLOCKWISE)	// Clockwise shapes have its own fill on the right
+				testshape->fill0 = testshape->fill1;
+			else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE)	// Counterclockwise shapes have its own fill on the left
+				testshape->fill1 = testshape->fill0;
 		}
 	}
 
+	// At this stage, we can safely assume that anything that has no internal fill is a proper hole
+	for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
+		if(s->winding==SWF::Shape::Winding::CLOCKWISE && s->fill1==0)
+			s->fill0 = 0;
+		else if(s->winding==SWF::Shape::Winding::COUNTERCLOCKWISE && s->fill0==0)
+			s->fill1 = 0;
+	}
+	
 	return remap;
 }
 

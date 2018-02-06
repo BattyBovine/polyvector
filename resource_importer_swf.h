@@ -94,8 +94,8 @@ public:
 private:
 	struct ShapeRemap
 	{
-		SWF::ShapeList Shapes;
-		std::map<uint16_t,std::list<uint16_t> > Holes;
+		std::vector<SWF::Shape> Shapes;
+		std::map<SWF::ShapeList::iterator, std::list<SWF::ShapeList::iterator> > Holes;
 	};
 	ShapeRemap shape_builder(SWF::FillStyleMap, SWF::LineStyleMap, SWF::ShapeList);
 	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList);

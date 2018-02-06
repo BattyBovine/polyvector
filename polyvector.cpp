@@ -15,8 +15,12 @@ PolyVector::PolyVector()
 	this->materialDefault->set_cull_mode(SpatialMaterial::CULL_DISABLED);
 
 	#ifdef POLYVECTOR_DEBUG
+	this->bDebugWireframe = false;
+	this->materialDebug.instance();
+	this->materialDefault->set_flag(SpatialMaterial::FLAG_UNSHADED, true);
 	this->os = OS::get_singleton();
-	this->triangulation_time = 0.0L;
+	this->dTriangulationTime = 0.0L;
+	this->dMeshUpdateTime = 0.0L;
 	#endif
 }
 
@@ -51,9 +55,14 @@ void PolyVector::draw_current_frame()
 			PolyVectorCharacter *pvchar = &this->lDictionaryData[symbol.id];
 			Array arr;
 			arr.resize(Mesh::ARRAY_MAX);
-			PoolVector<Vector3> vertices;
+			PoolVector<Vector2> vertices;
 			PoolVector<Vector3> normals;
 			PoolVector<Color> colours;
+			#ifdef POLYVECTOR_DEBUG
+			Array wireframearr;
+			wireframearr.resize(Mesh::ARRAY_MAX);
+			PoolVector<Vector2> wireframevertices;
+			#endif
 
 			for(PolyVectorCharacter::Element *s=pvchar->front(); s; s=s->next()) {
 				PolyVectorShape &shape = s->get();
@@ -66,12 +75,19 @@ void PolyVector::draw_current_frame()
 				uint32_t tess_size = tess.size();
 				std::vector<Vector2> poly;
 				PoolVector<Vector2>::Read tessreader = tess.read();
-				for(uint32_t i=1; i<tess_size; i++)
+				for(uint32_t i=1; i<tess_size; i++) {
 					poly.push_back(tessreader[i]);
+					#ifdef POLYVECTOR_DEBUG
+					if(this->bDebugWireframe) {
+						wireframevertices.push_back(tessreader[i-1]);
+						wireframevertices.push_back(tessreader[i]);
+					}
+					#endif
+				}
 				polygons.push_back(poly);
 				tessverts.insert(tessverts.end(), poly.begin(), poly.end());
 				for(List<PolyVectorPath>::Element *hole=shape.holes.front(); hole; hole=hole->next()) {
-					PoolVector<Vector2> holetess = ( hole->get() ).curve.tessellate(this->iCurveQuality, this->fMaxTessellationAngle);
+					PoolVector<Vector2> holetess = (hole->get()).curve.tessellate(this->iCurveQuality, this->fMaxTessellationAngle);
 					uint32_t holetess_size = holetess.size();
 					std::vector<Vector2> holepoly;
 					PoolVector<Vector2>::Read holetessreader = holetess.read();
@@ -86,7 +102,7 @@ void PolyVector::draw_current_frame()
 					for(std::vector<N>::reverse_iterator tris=indices.rbegin(); tris!=indices.rend(); tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
 						colours.push_back(shape.fillcolour);
 						normals.push_back(Vector3(0.0f, 0.0f, 1.0f));
-						vertices.push_back(Vector3(tessverts[*tris].x, tessverts[*tris].y, 0.0f));
+						vertices.push_back(Vector2(tessverts[*tris]));
 						#ifdef POLYVECTOR_DEBUG
 						this->vertex_count++;
 						#endif
@@ -101,6 +117,15 @@ void PolyVector::draw_current_frame()
 			newmesh.instance();
 			newmesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arr);
 			newmesh->surface_set_material(0, this->materialDefault);
+
+			#ifdef POLYVECTOR_DEBUG
+			if(this->bDebugWireframe) {
+				wireframearr[Mesh::ARRAY_VERTEX] = wireframevertices;
+				newmesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINES, wireframearr);
+				newmesh->surface_set_material(newmesh->get_surface_count()-1, this->materialDebug);
+			}
+			#endif
+
 			this->mapMeshDictionary[symbol.id][this->iCurveQuality] = newmesh;
 		}
 		if(!this->mapMeshDisplay.has(symbol.depth)) {
@@ -124,7 +149,7 @@ void PolyVector::draw_current_frame()
 		layer_separation += this->fLayerDepth;
 	}
 	#ifdef POLYVECTOR_DEBUG
-	this->triangulation_time = ( ( this->os->get_ticks_usec()-debugtimer )/1000000.0L );
+	this->dTriangulationTime = ( ( this->os->get_ticks_usec()-debugtimer )/1000000.0L );
 	#endif
 }
 
@@ -270,13 +295,26 @@ PoolVector<Face3> PolyVector::get_faces(uint32_t p_usage_flags) const
 
 
 #ifdef POLYVECTOR_DEBUG
+void PolyVector::set_debug_wireframe(bool b)
+{
+	this->bDebugWireframe = b;
+	this->clear_mesh_instances();
+	this->clear_mesh_data();
+	this->draw_current_frame();
+}
+
+bool PolyVector::get_debug_wireframe()
+{
+	return this->bDebugWireframe;
+}
+
 double PolyVector::get_triangulation_time()
 {
-	return this->triangulation_time;
+	return this->dTriangulationTime;
 }
 double PolyVector::get_mesh_update_time()
 {
-	return this->mesh_update_time;
+	return this->dMeshUpdateTime;
 }
 uint32_t PolyVector::get_vertex_count()
 {
@@ -292,6 +330,7 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_vector_image"), &PolyVector::get_vector_image);
 	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "vector", PROPERTY_HINT_RESOURCE_TYPE, "JSONVector"), "set_vector_image", "get_vector_image");
 
+
 	ADD_GROUP("Display","");
 	ClassDB::bind_method(D_METHOD("set_time"), &PolyVector::set_time);
 	ClassDB::bind_method(D_METHOD("get_time"), &PolyVector::get_time);
@@ -304,6 +343,7 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_material_unshaded"), &PolyVector::set_material_unshaded);
 	ClassDB::bind_method(D_METHOD("get_material_unshaded"), &PolyVector::get_material_unshaded);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "unshaded"), "set_material_unshaded", "get_material_unshaded");
+
 
 	ADD_GROUP("Adjustments","");
 	ClassDB::bind_method(D_METHOD("set_offset"), &PolyVector::set_offset);
@@ -318,12 +358,19 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "layer_separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
 
+
 	ADD_GROUP("Advanced","");
 	ClassDB::bind_method(D_METHOD("set_max_tessellation_angle"), &PolyVector::set_max_tessellation_angle);
 	ClassDB::bind_method(D_METHOD("get_max_tessellation_angle"), &PolyVector::get_max_tessellation_angle);
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "max_tessellation_angle", PROPERTY_HINT_RANGE, "1.0, 10.0, 1.0, 4.0"), "set_max_tessellation_angle", "get_max_tessellation_angle");
 
+
 	#ifdef POLYVECTOR_DEBUG
+	ADD_GROUP("Debug", "");
+	ClassDB::bind_method(D_METHOD("set_debug_wireframe"), &PolyVector::set_debug_wireframe);
+	ClassDB::bind_method(D_METHOD("get_debug_wireframe"), &PolyVector::get_debug_wireframe);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_wireframe"), "set_debug_wireframe", "get_debug_wireframe");
+
 	ClassDB::bind_method(D_METHOD("get_triangulation_time"), &PolyVector::get_triangulation_time);
 	ClassDB::bind_method(D_METHOD("get_mesh_update_time"), &PolyVector::get_mesh_update_time);
 	ClassDB::bind_method(D_METHOD("get_vertex_count"), &PolyVector::get_vertex_count);

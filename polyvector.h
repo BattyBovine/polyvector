@@ -63,6 +63,9 @@ public:
 	virtual PoolVector<Face3> get_faces(uint32_t p_usage_flags) const;
 
 	#ifdef POLYVECTOR_DEBUG
+	void set_debug_wireframe(bool);
+	bool get_debug_wireframe();
+
 	double get_triangulation_time();
 	double get_mesh_update_time();
 	uint32_t get_vertex_count();
@@ -92,8 +95,10 @@ private:
 
 	#ifdef POLYVECTOR_DEBUG
 	OS *os;
-	double triangulation_time;
-	double mesh_update_time;
+	bool bDebugWireframe;
+	Ref<SpatialMaterial> materialDebug;
+	double dTriangulationTime;
+	double dMeshUpdateTime;
 	uint32_t vertex_count;
 	#endif
 };
