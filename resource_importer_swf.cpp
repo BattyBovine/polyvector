@@ -307,12 +307,12 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 		if(parent!=remap.Shapes.end()) {
 			remap.Holes[parent].push_back(testshape);
 			// Satisfy fill rules for the child shape's parent if necessary
-			if(testshape->winding == SWF::Shape::Winding::CLOCKWISE && testshape->fill0!=0)	// Clockwise holes have the parent's fill on the left
+			if(testshape->winding == SWF::Shape::Winding::CLOCKWISE && testshape->fill0!=0)				// Clockwise holes have the parent's fill on the left
 				parent->fill0 = parent->fill1 = testshape->fill0;
 			else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE && testshape->fill1!=0)	// Counterclockwise holes have the parent's fill on the right
 				parent->fill0 = parent->fill1 = testshape->fill1;
 		}
-		if(testshape->winding == SWF::Shape::Winding::CLOCKWISE)	// Clockwise shapes have their own fill on the right
+		if(testshape->winding == SWF::Shape::Winding::CLOCKWISE)				// Clockwise shapes have their own fill on the right
 			testshape->fill0 = testshape->fill1;
 		else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE)	// Counterclockwise shapes have their own fill on the left
 			testshape->fill1 = testshape->fill0;
@@ -402,11 +402,11 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 
 	json jsondata;
 	try {
-		jsondata = json::parse(jsonstring, jsonstring+jsonlength);
+		std::vector<uint8_t> msgpak(jsonstring, jsonstring+jsonlength);
+		jsondata = json::from_msgpack(msgpak);
 	} catch(const json::parse_error&) {
-		try {	// If the data could not be parsed as a string, it might be MessagePack-encoded
-			std::vector<uint8_t> msgpak(jsonstring, jsonstring+jsonlength);
-			jsondata = json::from_msgpack(msgpak);
+		jsondata = json::parse(jsonstring, jsonstring+jsonlength);
+		try {	// If the data could not be parsed as MessagePack-encoded JSON, it's probably plain text
 		} catch(const json::parse_error &e) {
 			OS::get_singleton()->alert(String("JSON error: ")+e.what(), "JSON Error");
 		}
@@ -517,7 +517,6 @@ PolyVectorPath ResourceLoaderJSONVector::verts_to_curve(json jverts)
 			}
 		}
 		if(pvpath.closed) {
-			pvpath.curve.add_point(anchor, inctrldelta, outctrldelta);
 			inctrldelta = (quadcontrol-firstanchor)*(2.0f/3.0f);
 			pvpath.curve.add_point(firstanchor, inctrldelta, Vector2(0,0));
 		}
