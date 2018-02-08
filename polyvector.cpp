@@ -178,8 +178,6 @@ void PolyVector::clear_mesh_instances()
 
 void PolyVector::set_vector_image(const Ref<JSONVector> &p_vector)
 {
-	if(p_vector == this->dataVectorFile)
-		return;
 	this->dataVectorFile = p_vector;
 	if(this->dataVectorFile.is_null())
 		return;

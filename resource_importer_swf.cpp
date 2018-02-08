@@ -218,7 +218,7 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 			if(left.find(s-sl.begin())==left.end() && s->fill0!=0) {	// Check to the left of the shape first
 				SWF::Shape buildshape = *s;
 				buildshape.winding = SWF::Shape::Winding::COUNTERCLOCKWISE;
-				this->find_connected_shapes(&buildshape, s, &left, &right, sl);
+				this->find_connected_shapes(&buildshape, s, &left, &right, &sl);
 				if(buildshape.closed) {
 					buildshape.fill1 = buildshape.fill0;
 					remap.Shapes.push_back(buildshape);
@@ -227,7 +227,7 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 			if(right.find(s-sl.begin())==right.end() && s->fill1!=0) {	// Then to the right
 				SWF::Shape buildshape = *s;
 				buildshape.winding = SWF::Shape::Winding::CLOCKWISE;
-				this->find_connected_shapes(&buildshape, s, &left, &right, sl);
+				this->find_connected_shapes(&buildshape, s, &left, &right, &sl);
 				if(buildshape.closed) {
 					buildshape.fill0 = buildshape.fill1;
 					remap.Shapes.push_back(buildshape);
@@ -311,29 +311,20 @@ ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyl
 				parent->fill0 = parent->fill1 = testshape->fill0;
 			else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE && testshape->fill1!=0)	// Counterclockwise holes have the parent's fill on the right
 				parent->fill0 = parent->fill1 = testshape->fill1;
-		} else {	// If we found no enclosing shapes, then this is not a hole
-			if(testshape->winding == SWF::Shape::Winding::CLOCKWISE)	// Clockwise shapes have its own fill on the right
-				testshape->fill0 = testshape->fill1;
-			else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE)	// Counterclockwise shapes have its own fill on the left
-				testshape->fill1 = testshape->fill0;
 		}
-	}
-
-	// At this stage, we can safely assume that anything that has no internal fill is a proper hole
-	for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
-		if(s->winding==SWF::Shape::Winding::CLOCKWISE && s->fill1==0)
-			s->fill0 = 0;
-		else if(s->winding==SWF::Shape::Winding::COUNTERCLOCKWISE && s->fill0==0)
-			s->fill1 = 0;
+		if(testshape->winding == SWF::Shape::Winding::CLOCKWISE)	// Clockwise shapes have their own fill on the right
+			testshape->fill0 = testshape->fill1;
+		else if(testshape->winding == SWF::Shape::Winding::COUNTERCLOCKWISE)	// Counterclockwise shapes have their own fill on the left
+			testshape->fill1 = testshape->fill0;
 	}
 	
 	return remap;
 }
 
-void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::ShapeList::iterator s, std::set<uint16_t> *leftused, std::set<uint16_t> *rightused, SWF::ShapeList sl)
+void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::ShapeList::iterator s, std::set<uint16_t> *leftused, std::set<uint16_t> *rightused, SWF::ShapeList *sl)
 {
 	SWF::ShapeList::iterator next_shape;
-	for(next_shape=sl.begin(); next_shape!=sl.end(); next_shape++) {
+	for(next_shape=sl->begin(); next_shape!=sl->end(); next_shape++) {
 		if(next_shape==s || next_shape->closed)
 			continue;
 		if(this->points_equal(buildshape->vertices.back(), next_shape->vertices.back())) {	// If attached in reverse, get the opposite fill from usual
@@ -347,20 +338,20 @@ void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::Sha
 		}
 		else	continue;	// If the shape isn't actually attached, skip
 	}
-	if(next_shape==sl.end())	// If no connected shapes were found, this is the end
+	if(next_shape==sl->end())	// If no connected shapes were found, this is the end
 		return;
 	SWF::Shape mergeshape = *next_shape;
 	if(this->points_equal(buildshape->vertices.back(), mergeshape.vertices.back())) {
 		this->points_reverse(&mergeshape);
 		if(buildshape->winding==SWF::Shape::Winding::CLOCKWISE)
-			leftused->insert(next_shape-sl.begin());
+			leftused->insert(next_shape-sl->begin());
 		else if(buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE)
-			rightused->insert(next_shape-sl.begin());
+			rightused->insert(next_shape-sl->begin());
 	} else {
 		if(buildshape->winding==SWF::Shape::Winding::CLOCKWISE)
-			rightused->insert(next_shape-sl.begin());
+			rightused->insert(next_shape-sl->begin());
 		else if(buildshape->winding==SWF::Shape::Winding::COUNTERCLOCKWISE)
-			leftused->insert(next_shape-sl.begin());
+			leftused->insert(next_shape-sl->begin());
 	}
 	buildshape->vertices.insert(buildshape->vertices.end(), mergeshape.vertices.begin()+1, mergeshape.vertices.end());
 

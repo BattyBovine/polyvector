@@ -98,7 +98,7 @@ private:
 		std::map<SWF::ShapeList::iterator, std::list<SWF::ShapeList::iterator> > Holes;
 	};
 	ShapeRemap shape_builder(SWF::FillStyleMap, SWF::LineStyleMap, SWF::ShapeList);
-	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList);
+	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList*);
 	inline bool points_equal(SWF::Vertex&, SWF::Vertex&);
 	inline void points_reverse(SWF::Shape*);
 };
