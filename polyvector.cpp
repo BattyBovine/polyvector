@@ -55,7 +55,7 @@ void PolyVector::draw_current_frame()
 			PolyVectorCharacter *pvchar = &this->lDictionaryData[symbol.id];
 			Array arr;
 			arr.resize(Mesh::ARRAY_MAX);
-			PoolVector<Vector2> vertices;
+			PoolVector<Vector3> vertices;
 			PoolVector<Vector3> normals;
 			PoolVector<Color> colours;
 			#ifdef POLYVECTOR_DEBUG
@@ -86,8 +86,8 @@ void PolyVector::draw_current_frame()
 				}
 				polygons.push_back(poly);
 				tessverts.insert(tessverts.end(), poly.begin(), poly.end());
-				for(List<PolyVectorPath>::Element *hole=shape.holes.front(); hole; hole=hole->next()) {
-					PoolVector<Vector2> holetess = (hole->get()).curve.tessellate(this->iCurveQuality, this->fMaxTessellationAngle);
+				for(List<uint16_t>::Element *hole=shape.holes.front(); hole; hole=hole->next()) {
+					PoolVector<Vector2> holetess = (*pvchar)[hole->get()].path.curve.tessellate(this->iCurveQuality, this->fMaxTessellationAngle);
 					uint32_t holetess_size = holetess.size();
 					std::vector<Vector2> holepoly;
 					PoolVector<Vector2>::Read holetessreader = holetess.read();
@@ -102,7 +102,7 @@ void PolyVector::draw_current_frame()
 					for(std::vector<N>::reverse_iterator tris=indices.rbegin(); tris!=indices.rend(); tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
 						colours.push_back(shape.fillcolour);
 						normals.push_back(Vector3(0.0f, 0.0f, 1.0f));
-						vertices.push_back(Vector2(tessverts[*tris]));
+						vertices.push_back(Vector3(tessverts[*tris].x, tessverts[*tris].y, 0.0f));
 						#ifdef POLYVECTOR_DEBUG
 						this->vertex_count++;
 						#endif
@@ -178,6 +178,8 @@ void PolyVector::clear_mesh_instances()
 
 void PolyVector::set_vector_image(const Ref<JSONVector> &p_vector)
 {
+	if(this->dataVectorFile.is_valid())
+		this->dataVectorFile.unref();
 	this->dataVectorFile = p_vector;
 	if(this->dataVectorFile.is_null())
 		return;

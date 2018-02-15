@@ -38,8 +38,9 @@ struct PolyVectorPath
 };
 struct PolyVectorShape
 {
+	uint8_t layer;
 	PolyVectorPath path;
-	List<PolyVectorPath> holes;
+	List<uint16_t> holes;
 	Color fillcolour;
 	Color strokecolour;
 
@@ -94,13 +95,15 @@ public:
 private:
 	struct ShapeRemap
 	{
-		std::vector<SWF::Shape> Shapes;
-		std::map<SWF::ShapeList::iterator, std::list<SWF::ShapeList::iterator> > Holes;
+		SWF::ShapeList Shapes;
+		std::map<SWF::ShapeList::iterator, float> Areas;
+		std::map<SWF::ShapeList::iterator, std::set<SWF::ShapeList::iterator> > Holes;
 	};
 	ShapeRemap shape_builder(SWF::FillStyleMap, SWF::LineStyleMap, SWF::ShapeList);
-	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList*);
+	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, bool, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList*);
 	inline bool points_equal(SWF::Vertex&, SWF::Vertex&);
 	inline void points_reverse(SWF::Shape*);
+	inline float shape_area(SWF::Shape);
 };
 #endif
 
@@ -142,6 +145,7 @@ public:
 #define PV_JSON_NAME_FPS		"FPS"
 #define PV_JSON_NAME_LIBRARY	"Library"
 #define PV_JSON_NAME_CHARACTERS	"Characters"
+#define PV_JSON_NAME_LAYER		"Layer"
 #define PV_JSON_NAME_FILL		"Fill"
 #define PV_JSON_NAME_STROKE		"Stroke"
 #define PV_JSON_NAME_CLOSED		"Closed"
