@@ -104,35 +104,30 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 				if(characterid>0) {
 					charactermap[characterid] = charactermap.size()+1;
 					json characterdef;
-					ShapeRemap remap = this->shape_builder(dict->FillStyles, dict->LineStyles, character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
-					for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++) {
-						SWF::Shape shape = *s;
+					SWFPolygonList shapes = this->shape_builder(character.shapes);	// Merge shapes from Flash into solid objects and calculate hole placement and fill rules
+					for(SWFPolygonList::iterator shape=shapes.begin(); shape!=shapes.end(); shape++) {
 						//uint16_t shapeno = (s-remap.Shapes.cbegin());
 						json shapeout;
-						if(shape.layer>0)
-							shapeout[PV_JSON_NAME_LAYER] = shape.layer;
-						shapeout[PV_JSON_NAME_FILL] = shape.fill0;
+						if(shape->polygon.layer>0)
+							shapeout[PV_JSON_NAME_LAYER] = shape->polygon.layer;
+						shapeout[PV_JSON_NAME_FILL] = shape->polygon.fill0;
 						//shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
-						shapeout[PV_JSON_NAME_CLOSED] = shape.closed;
-						if(remap.Holes.find(s)==remap.Holes.end()) {	// Keep enclosing shapes wound clockwise
-							if(remap.Areas[s]<0)
-								this->points_reverse(&shape);
-						} else {										// Keep inner shapes wound counter-clockwise
-							if(remap.Areas[s]>0)
-								this->points_reverse(&shape);
-						}
-						for(std::vector<SWF::Vertex>::iterator v=shape.vertices.begin(); v!=shape.vertices.end(); v++) {
-							if(v!=shape.vertices.begin()) {
+						shapeout[PV_JSON_NAME_CLOSED] = shape->polygon.closed;
+						if(shape->area<0)
+							this->points_reverse(&shape->polygon);
+						for(std::vector<SWF::Vertex>::iterator v=shape->polygon.vertices.begin(); v!=shape->polygon.vertices.end(); v++) {
+							if(v!=shape->polygon.vertices.begin()) {
 								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->control.x  : double(round(v->control.x*100.0f)/100.0L);
 								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? -v->control.y : double(round(-v->control.y*100.0f)/100.0L);
 							}
-							if(shapeout[PV_JSON_NAME_CLOSED]==true && v==(shape.vertices.end()-1))
+							if(shapeout[PV_JSON_NAME_CLOSED]==true && v==(shape->polygon.vertices.end()-1))
 								break;
 							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->anchor.x  : double(round(v->anchor.x*100.0f)/100.0L);
 							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? -v->anchor.y : double(round(-v->anchor.y*100.0f)/100.0L);
 						}
-						for(std::set<SWF::ShapeList::iterator>::iterator h=remap.Holes[s].begin(); h!=remap.Holes[s].end(); h++)
-							shapeout[PV_JSON_NAME_HOLES] += ((*h)-remap.Shapes.begin());
+						for(std::list<uint16_t>::iterator h=shape->children.begin(); h!=shape->children.end(); h++) {
+							shapeout[PV_JSON_NAME_HOLES] += (*h);
+						}
 						characterdef += shapeout;
 					}
 					root[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_CHARACTERS] += characterdef;
@@ -192,106 +187,145 @@ void ResourceImporterSWF::get_import_options(List<ImportOption> *r_options, int 
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "prettify_text"), false));
 }
 
-ResourceImporterSWF::ShapeRemap ResourceImporterSWF::shape_builder(SWF::FillStyleMap fillstyles, SWF::LineStyleMap linestyles, SWF::ShapeList sl)
+ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::ShapeList sl)
 {
-	ShapeRemap remap;
-	remap.Shapes.reserve(sl.size());
+	SWFPolygonList shapeparts;
+	shapeparts.reserve(sl.size());
 
-	// Merge all connected lines with compatible fills into complete shapes
-	std::set<uint16_t> left, right;	// Shapes that get used to satisfy left/right fill rules are discarded here
-	for(SWF::ShapeList::iterator s=sl.begin(); s!=sl.end(); s++) {
+	for(SWF::ShapeList::iterator s=sl.begin(); s!=sl.end(); s++) {	// Collect already closed shapes first
 		if(s->closed) {
-			remap.Shapes.push_back(*s);
-		} else {
-			if(left.find(s-sl.begin())==left.end() && s->fill0!=0) {	// Check to the left of the shape first (counter-clockwise)
-				SWF::Shape buildshape = *s;
-				this->find_connected_shapes(&buildshape, s, false, &left, &right, &sl);
-				if(buildshape.closed)
-					remap.Shapes.push_back(buildshape);
-			}
-			if(right.find(s-sl.begin())==right.end() && s->fill1!=0) {	// Then to the right (clockwise)
-				SWF::Shape buildshape = *s;
-				this->find_connected_shapes(&buildshape, s, true, &left, &right, &sl);
-				if(buildshape.closed)
-					remap.Shapes.push_back(buildshape);
-			}
+			SWFPolygon sp;
+			sp.polygon = *s;
+			sp.area = this->shape_area(sp.polygon);
+			if(sp.area < 0)			sp.polygon.fill1 = sp.polygon.fill0;	// Use left fill if the shape is wound counter-clockwise
+			else if(sp.area > 0)	sp.polygon.fill0 = sp.polygon.fill1;	// Use right fill if the shape is wound clockwise
+			else continue;
+			shapeparts.push_back(sp);
 		}
 	}
-	
-	// Calculate area for each shape so we can check winding and size as needed
-	for(SWF::ShapeList::iterator s=remap.Shapes.begin(); s!=remap.Shapes.end(); s++)
-		remap.Areas[s] = this->shape_area(*s);
-	
-	// Test which shapes are enclosed by other shapes
-	for(SWF::ShapeList::iterator innershape=remap.Shapes.begin(); innershape!=remap.Shapes.end(); innershape++) {
-		if(!innershape->closed || innershape->vertices.size()<2 || abs(floor(remap.Areas[innershape]))==0.0f)
-			continue;
-		uint16_t innershapenumber = innershape-remap.Shapes.begin();
-		std::vector<SWF::ShapeList::iterator> parentshapes;
-		for(SWF::ShapeList::iterator outershape=remap.Shapes.begin(); outershape!=remap.Shapes.end(); outershape++) {
-			if(innershape == outershape ||
-				outershape->vertices.size() < 3 ||
-				innershape->layer != outershape->layer ||
-				(abs(remap.Areas[innershape]) > abs(remap.Areas[outershape])))
+
+	std::sort(shapeparts.begin(), shapeparts.end(),							// Sort from smallest to largest
+		[](const SWFPolygon &a, const SWFPolygon &b) { return abs(a.area) < abs(b.area); });
+
+	std::map<SWFPolygonList::iterator, std::list<SWF::ShapeList::iterator> > childsegments;
+	std::set<SWFPolygonList::iterator> discardedpolygons;
+	std::set<SWF::ShapeList::iterator> discardedsegments;
+	for(SWFPolygonList::iterator outer=shapeparts.begin(); outer!=shapeparts.end(); outer++) {		// For every closed polygon...
+		for(SWFPolygonList::iterator inner=shapeparts.begin(); inner!=shapeparts.end(); inner++) {	// ...find the child polygons (i.e. holes)...
+			if(outer==inner ||
+				!inner->polygon.closed ||
+				discardedpolygons.find(inner)!=discardedpolygons.end() ||
+				!this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon))
 				continue;
-			uint16_t outershapenumber = outershape-remap.Shapes.begin();
-			SWF::Vertex *innervertexarray = &innershape->vertices[0];	// Find a point within the inner shape to check against
-			SWF::Point innervertex;
-			if(innershape->vertices.size()==2) {	// If the test shape has only two vertices, use the average of the two vertices
-				innervertex.x = ( innervertexarray[0].anchor.x + innervertexarray[1].anchor.x ) / 2.0f;
-				innervertex.y = ( innervertexarray[0].anchor.y + innervertexarray[1].anchor.y ) / 2.0f;
-			} else {
-				for(uint16_t vindex2=2; vindex2<innershape->vertices.size(); vindex2++) {
-					uint16_t vindex1 = ( vindex2-1 );
-					uint16_t vindex0 = ( vindex2-2 );
-					float triarea =	// Get the area of the first, middle, and last vertices
-						( ( innervertexarray[vindex0].anchor.x*innervertexarray[vindex1].anchor.y )-( innervertexarray[vindex1].anchor.x*innervertexarray[vindex0].anchor.y ) ) +
-						( ( innervertexarray[vindex1].anchor.x*innervertexarray[vindex2].anchor.y )-( innervertexarray[vindex2].anchor.x*innervertexarray[vindex1].anchor.y ) ) +
-						( ( innervertexarray[vindex2].anchor.x*innervertexarray[vindex0].anchor.y )-( innervertexarray[vindex0].anchor.x*innervertexarray[vindex2].anchor.y ) );
-					if(( remap.Areas[innershape]<0 && triarea<0 ) || ( remap.Areas[innershape]>0 && triarea>0 )) {	// We found a valid point if the triangle's winding matches the overall shape's winding
-						innervertex.x = ( innervertexarray[0].anchor.x + innervertexarray[vindex1].anchor.x + innervertexarray[vindex2].anchor.x ) / 3.0f;
-						innervertex.y = ( innervertexarray[0].anchor.y + innervertexarray[vindex1].anchor.y + innervertexarray[vindex2].anchor.y ) / 3.0f;
-						break;
-					}
+			outer->children.push_back(inner-shapeparts.begin());
+			discardedpolygons.insert(inner);
+		}
+		for(SWF::ShapeList::iterator inner=sl.begin(); inner!=sl.end(); inner++) {					// ...and then inner line segments
+			if(inner->closed ||
+				discardedsegments.find(inner)!=discardedsegments.end() ||
+				!this->shape_contains_point(inner->vertices.front().anchor, outer->polygon))
+				continue;
+			childsegments[outer].push_back(inner);
+			discardedsegments.insert(inner);
+		}
+	}
+
+	std::set<SWF::ShapeList::iterator> left, right;	// Shapes that get used to satisfy fill rules are discarded here
+	for(SWFPolygonList::iterator parent=shapeparts.begin(); parent!=shapeparts.end(); parent++) {	// Merge line segments into complete shapes
+		for(std::list<SWF::ShapeList::iterator>::iterator l=childsegments[parent].begin(); l!=childsegments[parent].end(); l++) {
+			SWF::ShapeList::iterator line = *l;
+			if(left.find(line)==left.end() && line->fill0!=parent->polygon.fill0) {		// Check to the left of the shape first (counter-clockwise)
+				SWFPolygon sp;
+				sp.polygon = *line;
+				this->find_connected_shapes(&sp.polygon, line, false, &left, &right, &childsegments[parent]);
+				if(sp.polygon.closed) {
+					sp.area = this->shape_area(sp.polygon);
+					sp.polygon.fill1 = sp.polygon.fill0;
+					sp.parent = (parent-shapeparts.begin());
+					parent->children.push_back(shapeparts.size());
+					shapeparts.push_back(sp);
 				}
 			}
-			uint16_t outervertexcount = outershape->vertices.size();
-			SWF::Vertex *outervertices = &outershape->vertices[0];
-			bool contained = false;
-			for(uint16_t outeredge=1; outeredge<outervertexcount; outeredge++) {
-				if((outervertices[outeredge].anchor.y>innervertex.y)!=(outervertices[outeredge-1].anchor.y>innervertex.y) &&
-					innervertex.x<(outervertices[outeredge-1].anchor.x-outervertices[outeredge].anchor.x)*(innervertex.y-outervertices[outeredge].anchor.y)/(outervertices[outeredge-1].anchor.y-outervertices[outeredge].anchor.y)+outervertices[outeredge].anchor.x)
-					contained = !contained;
+			if(right.find(line)==right.end() && line->fill1!=parent->polygon.fill0) {	// Then to the right (clockwise)
+				SWFPolygon sp;
+				sp.polygon = *line;
+				this->find_connected_shapes(&sp.polygon, line, true, &left, &right, &childsegments[parent]);
+				if(sp.polygon.closed) {
+					sp.area = this->shape_area(sp.polygon);
+					sp.polygon.fill0 = sp.polygon.fill1;
+					sp.parent = (parent-shapeparts.begin());
+					parent->children.push_back(shapeparts.size());
+					shapeparts.push_back(sp);
+				}
 			}
-			if(contained)
-				parentshapes.push_back(outershape);
 		}
-		SWF::ShapeList::iterator parent = remap.Shapes.end();
-		for(std::vector<SWF::ShapeList::iterator>::iterator s=parentshapes.begin(); s!=parentshapes.end(); s++) {
-			if(s==parentshapes.begin() || (abs(remap.Areas[*s]) < abs(remap.Areas[parent])))	// Find the smallest shape that encloses our test shape; this is the parent
-				parent = *s;
-		}
-		if(parent!=remap.Shapes.end()) {
-			remap.Holes[parent].insert(innershape);
-			// Satisfy fill rules for the child shape's parent if necessary
-			if(remap.Areas[innershape]>0 && innershape->fill0!=0)		// Clockwise holes have the parent's fill on the left
-				parent->fill0 = parent->fill1 = innershape->fill0;
-			else if(remap.Areas[innershape]<0 && innershape->fill1!=0)	// Counter-clockwise holes have the parent's fill on the right
-				parent->fill0 = parent->fill1 = innershape->fill1;
-		}
-		if(remap.Areas[innershape]>0)		// Clockwise shapes have their own fill on the right
-			innershape->fill0 = innershape->fill1;
-		else if(remap.Areas[innershape]<0)	// Counter-clockwise shapes have their own fill on the left
-			innershape->fill1 = innershape->fill0;
 	}
-	
-	return remap;
+
+	SWFPolygonList shapeadd;
+	std::list<SWF::ShapeList::iterator> outersegments;
+	for(SWF::ShapeList::iterator line=sl.begin(); line!=sl.end(); line++) {	// If line segments that have no parents exist at this point, these are our actual outside edges
+		if(!line->closed && discardedsegments.find(line)==discardedsegments.end())
+			outersegments.push_back(line);
+	}
+	for(std::list<SWF::ShapeList::iterator>::iterator l=outersegments.begin(); l!=outersegments.end(); l++) {	// Make complete shapes from these segments
+		SWF::ShapeList::iterator line = *l;
+		if(!line->closed && discardedsegments.find(line)==discardedsegments.end()) {
+			if(left.find(line)==left.end() &&
+				line->fill0!=0) {		// Check to the left of the shape first (counter-clockwise)
+				SWFPolygon sp;
+				sp.polygon = *line;
+				this->find_connected_shapes(&sp.polygon, line, false, &left, &right, &outersegments);
+				if(sp.polygon.closed) {
+					sp.area = this->shape_area(sp.polygon);
+					sp.polygon.fill1 = sp.polygon.fill0;
+					shapeadd.push_back(sp);
+				}
+			}
+			if(right.find(line)==right.end() &&
+				line->fill1!=0) {	// Then to the right (clockwise)
+				SWFPolygon sp;
+				sp.polygon = *line;
+				this->find_connected_shapes(&sp.polygon, line, true, &left, &right, &outersegments);
+				if(sp.polygon.closed) {
+					sp.area = this->shape_area(sp.polygon);
+					sp.polygon.fill0 = sp.polygon.fill1;
+					shapeadd.push_back(sp);
+				}
+			}
+		}
+	}
+	for(SWFPolygonList::iterator outer=shapeadd.begin(); outer!=shapeadd.end(); outer++) {	// Find this shape's children in our original list
+		for(SWFPolygonList::iterator inner=shapeparts.begin(); inner!=shapeparts.end(); inner++) {
+			if(this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon) &&
+				inner->parent<0) {	// Only add a child if the found shape has no parent already
+				inner->parent = (outer-shapeadd.begin())+shapeparts.size();	// Set the new outer shape as the child shape's parent (assuming we'll later be appending the new shapes to the old list)
+				outer->children.push_back(inner-shapeparts.begin());
+			}
+		}
+	}
+	shapeparts.insert(shapeparts.end(), shapeadd.begin(), shapeadd.end());	// Finally, merge our newly-found shapes to the previous list
+
+	return shapeparts;
 }
 
-void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::ShapeList::iterator s, bool clockwise, std::set<uint16_t> *leftused, std::set<uint16_t> *rightused, SWF::ShapeList *sl)
+bool ResourceImporterSWF::shape_contains_point(SWF::Point innervertex, SWF::Shape outershape)
 {
-	SWF::ShapeList::iterator next_shape;
-	for(next_shape=sl->begin(); next_shape!=sl->end(); next_shape++) {
+	uint16_t outervertexcount = outershape.vertices.size();
+	SWF::Vertex *outervertices = &outershape.vertices[0];
+	bool contained = false;
+	for(uint16_t outeredge=1; outeredge<outervertexcount; outeredge++) {
+		if(( outervertices[outeredge].anchor.y>innervertex.y )!=( outervertices[outeredge-1].anchor.y>innervertex.y ) &&
+			innervertex.x<( outervertices[outeredge-1].anchor.x-outervertices[outeredge].anchor.x )*( innervertex.y-outervertices[outeredge].anchor.y )/( outervertices[outeredge-1].anchor.y-outervertices[outeredge].anchor.y )+outervertices[outeredge].anchor.x)
+			contained = !contained;
+	}
+	return contained;
+}
+
+void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::ShapeList::iterator s, bool clockwise, std::set<SWF::ShapeList::iterator> *leftused, std::set<SWF::ShapeList::iterator> *rightused, std::list<SWF::ShapeList::iterator> *sl)
+{
+	std::list<SWF::ShapeList::iterator>::iterator ns;
+	for(ns=sl->begin(); ns!=sl->end(); ns++) {
+		SWF::ShapeList::iterator next_shape = *ns;
 		if(next_shape==s || next_shape->closed)
 			continue;
 		if(this->points_equal(buildshape->vertices.back(), next_shape->vertices.back())) {	// If attached in reverse, compare opposite fills
@@ -305,20 +339,21 @@ void ResourceImporterSWF::find_connected_shapes(SWF::Shape *buildshape, SWF::Sha
 		}
 		else	continue;	// If the shape isn't attached, skip
 	}
-	if(next_shape==sl->end())	// If no connected shapes were found, this is the end
+	if(ns==sl->end())	// If no connected shapes were found, this is the end
 		return;
+	SWF::ShapeList::iterator next_shape = *ns;
 	SWF::Shape mergeshape = *next_shape;
 	if(this->points_equal(buildshape->vertices.back(), mergeshape.vertices.back())) {
 		this->points_reverse(&mergeshape);
 		if(clockwise)
-			leftused->insert(next_shape-sl->begin());
+			leftused->insert(next_shape);
 		else
-			rightused->insert(next_shape-sl->begin());
+			rightused->insert(next_shape);
 	} else {
 		if(clockwise)
-			rightused->insert(next_shape-sl->begin());
+			rightused->insert(next_shape);
 		else
-			leftused->insert(next_shape-sl->begin());
+			leftused->insert(next_shape);
 	}
 	buildshape->vertices.insert(buildshape->vertices.end(), mergeshape.vertices.begin()+1, mergeshape.vertices.end());
 
@@ -356,6 +391,8 @@ inline float ResourceImporterSWF::shape_area(SWF::Shape s)
 {
 	if(s.vertices.size()<3)
 		return 0.0f;
+	if(!s.closed)
+		s.vertices.push_back(s.vertices.front());
 	size_t vsize = s.vertices.size();
 	SWF::Vertex *varray = &s.vertices[0];
 	float area = 0.0f;

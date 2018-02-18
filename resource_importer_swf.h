@@ -93,16 +93,21 @@ public:
 	ResourceImporterSWF() {}
 
 private:
-	struct ShapeRemap
+	struct SWFPolygon;
+	typedef std::vector<SWFPolygon> SWFPolygonList;
+	struct SWFPolygon
 	{
-		SWF::ShapeList Shapes;
-		std::map<SWF::ShapeList::iterator, float> Areas;
-		std::map<SWF::ShapeList::iterator, std::set<SWF::ShapeList::iterator> > Holes;
+		SWF::Shape polygon;
+		float area = 0.0f;
+		int32_t parent = -1;
+		std::list<uint16_t> children;
 	};
-	ShapeRemap shape_builder(SWF::FillStyleMap, SWF::LineStyleMap, SWF::ShapeList);
-	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, bool, std::set<uint16_t>*, std::set<uint16_t>*, SWF::ShapeList*);
+	SWFPolygonList shape_builder(SWF::ShapeList);
+	bool shape_contains_point(SWF::Point, SWF::Shape);
+	void find_connected_shapes(SWF::Shape*, SWF::ShapeList::iterator, bool, std::set<SWF::ShapeList::iterator>*, std::set<SWF::ShapeList::iterator>*, std::list<SWF::ShapeList::iterator>*);
 	inline bool points_equal(SWF::Vertex&, SWF::Vertex&);
 	inline void points_reverse(SWF::Shape*);
+	inline float shape_area(SWF::ShapeList::iterator i) { return this->shape_area(*i); }
 	inline float shape_area(SWF::Shape);
 };
 #endif
