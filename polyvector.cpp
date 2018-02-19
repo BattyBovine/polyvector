@@ -139,8 +139,8 @@ void PolyVector::draw_current_frame()
 		Transform transform;
 		Vector2 offset = this->v2Offset*this->fUnitScale;
 		transform.set(
-			symbol.matrix.ScaleX*this->fUnitScale,				symbol.matrix.Skew0*this->fUnitScale,					0.0f,
-			symbol.matrix.Skew1*this->fUnitScale,				symbol.matrix.ScaleY*this->fUnitScale,					0.0f,
+			symbol.matrix.ScaleX*this->fUnitScale,				symbol.matrix.Skew1*this->fUnitScale,					0.0f,
+			symbol.matrix.Skew0*this->fUnitScale,				symbol.matrix.ScaleY*this->fUnitScale,					0.0f,
 			0.0f,												0.0f,													1.0f,
 			symbol.matrix.TranslateX*this->fUnitScale+offset.x,	-symbol.matrix.TranslateY*this->fUnitScale+offset.y,	layer_separation
 		);

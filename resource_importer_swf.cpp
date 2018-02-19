@@ -149,8 +149,8 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleX : double(round(dl->second.transform.ScaleX*100) / 100.0L);
 						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleY : double(round(dl->second.transform.ScaleY*100) / 100.0L);
 						if(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f) {
-							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew0 : double(round(dl->second.transform.RotateSkew0*100) / 100.0L);
-							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.RotateSkew1 : double(round(dl->second.transform.RotateSkew1*100) / 100.0L);
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? -dl->second.transform.RotateSkew0 : double(round(-dl->second.transform.RotateSkew0*100) / 100.0L);
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? -dl->second.transform.RotateSkew1 : double(round(-dl->second.transform.RotateSkew1*100) / 100.0L);
 						}
 					}
 					jdisplaylist += charout;
