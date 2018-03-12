@@ -1,5 +1,5 @@
-#ifndef RESOURCE_IMPORTER_SVG_H_f6e3a78cd13111e78941cec278b6b50a
-#define RESOURCE_IMPORTER_SVG_H_f6e3a78cd13111e78941cec278b6b50a
+#ifndef RESOURCE_IMPORTER_SWF_H_f6e3a78cd13111e78941cec278b6b50a
+#define RESOURCE_IMPORTER_SWF_H_f6e3a78cd13111e78941cec278b6b50a
 
 using N = uint32_t;
 #include "json/src/json.hpp"
@@ -14,6 +14,8 @@ using json = nlohmann::json;
 #include <scene/resources/curve.h>
 
 #include "libshockwave/swfparser.h"
+
+#define RISWF_SHAPE_AREA_THRESHOLD 0.1f
 
 struct PolyVectorMatrix
 {
@@ -99,7 +101,9 @@ private:
 	{
 		SWF::Shape polygon;
 		float area = 0.0f;
-		int32_t parent = -1;
+		uint16_t fill;
+		uint16_t stroke;
+		bool has_parent = false;
 		std::list<uint16_t> children;
 	};
 	SWFPolygonList shape_builder(SWF::ShapeList);
@@ -109,6 +113,7 @@ private:
 	inline void points_reverse(SWF::Shape*);
 	inline float shape_area(SWF::ShapeList::iterator i) { return this->shape_area(*i); }
 	inline float shape_area(SWF::Shape);
+	inline bool shape_area_too_small(float a) { return (abs(a)<RISWF_SHAPE_AREA_THRESHOLD); }
 };
 #endif
 
@@ -165,4 +170,4 @@ public:
 #define PV_JSON_NAME_DEPTH		"Depth"
 #define PV_JSON_NAME_TRANSFORM	"Transform"
 
-#endif // RESOURCE_IMPORTER_SVG_H_f6e3a78cd13111e78941cec278b6b50a
+#endif // RESOURCE_IMPORTER_SWF_H_f6e3a78cd13111e78941cec278b6b50a

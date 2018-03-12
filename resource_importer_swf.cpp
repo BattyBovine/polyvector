@@ -110,8 +110,8 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 						json shapeout;
 						if(shape->polygon.layer>0)
 							shapeout[PV_JSON_NAME_LAYER] = shape->polygon.layer;
-						shapeout[PV_JSON_NAME_FILL] = shape->polygon.fill0;
-						//shapeout[PV_JSON_NAME_STROKE] = shape.stroke;
+						shapeout[PV_JSON_NAME_FILL] = shape->fill;
+						//shapeout[PV_JSON_NAME_STROKE] = shape->stroke;
 						shapeout[PV_JSON_NAME_CLOSED] = shape->polygon.closed;
 						if(shape->area<0)
 							this->points_reverse(&shape->polygon);
@@ -197,10 +197,13 @@ ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::Shap
 			SWFPolygon sp;
 			sp.polygon = *s;
 			sp.area = this->shape_area(sp.polygon);
-			if(sp.area < 0)			sp.polygon.fill1 = sp.polygon.fill0;	// Use left fill if the shape is wound counter-clockwise
-			else if(sp.area > 0)	sp.polygon.fill0 = sp.polygon.fill1;	// Use right fill if the shape is wound clockwise
-			else continue;
-			shapeparts.push_back(sp);
+			if(!this->shape_area_too_small(sp.area)) {
+				if(sp.area < 0)			sp.fill = sp.polygon.fill0;	// Use left fill if the shape is wound counter-clockwise
+				else if(sp.area > 0)	sp.fill = sp.polygon.fill1;	// Use right fill if the shape is wound clockwise
+				else continue;
+				sp.stroke = sp.polygon.stroke;
+				shapeparts.push_back(sp);
+			}
 		}
 	}
 
@@ -218,6 +221,7 @@ ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::Shap
 				!this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon))
 				continue;
 			outer->children.push_back(inner-shapeparts.begin());
+			inner->has_parent = true;
 			discardedpolygons.insert(inner);
 		}
 		for(SWF::ShapeList::iterator inner=sl.begin(); inner!=sl.end(); inner++) {					// ...and then inner line segments
@@ -240,10 +244,13 @@ ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::Shap
 				this->find_connected_shapes(&sp.polygon, line, false, &left, &right, &childsegments[parent]);
 				if(sp.polygon.closed) {
 					sp.area = this->shape_area(sp.polygon);
-					sp.polygon.fill1 = sp.polygon.fill0;
-					sp.parent = (parent-shapeparts.begin());
-					parent->children.push_back(shapeparts.size());
-					shapeparts.push_back(sp);
+					if(!this->shape_area_too_small(sp.area)) {
+						sp.fill = sp.polygon.fill0;
+						sp.stroke = sp.polygon.stroke;
+						parent->children.push_back(shapeparts.size());
+						sp.has_parent = true;
+						shapeparts.push_back(sp);
+					}
 				}
 			}
 			if(right.find(line)==right.end() && line->fill1!=parent->polygon.fill0) {	// Then to the right (clockwise)
@@ -252,15 +259,19 @@ ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::Shap
 				this->find_connected_shapes(&sp.polygon, line, true, &left, &right, &childsegments[parent]);
 				if(sp.polygon.closed) {
 					sp.area = this->shape_area(sp.polygon);
-					sp.polygon.fill0 = sp.polygon.fill1;
-					sp.parent = (parent-shapeparts.begin());
-					parent->children.push_back(shapeparts.size());
-					shapeparts.push_back(sp);
+					if(!this->shape_area_too_small(sp.area)) {
+						sp.fill = sp.polygon.fill1;
+						sp.stroke = sp.polygon.stroke;
+						parent->children.push_back(shapeparts.size());
+						sp.has_parent = true;
+						shapeparts.push_back(sp);
+					}
 				}
 			}
 		}
 	}
 
+	// From here, find outside edges made from line segments that we've missed thus far
 	SWFPolygonList shapeadd;
 	std::list<SWF::ShapeList::iterator> outersegments;
 	for(SWF::ShapeList::iterator line=sl.begin(); line!=sl.end(); line++) {	// If line segments that have no parents exist at this point, these are our actual outside edges
@@ -277,8 +288,11 @@ ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::Shap
 				this->find_connected_shapes(&sp.polygon, line, false, &left, &right, &outersegments);
 				if(sp.polygon.closed) {
 					sp.area = this->shape_area(sp.polygon);
-					sp.polygon.fill1 = sp.polygon.fill0;
-					shapeadd.push_back(sp);
+					if(!this->shape_area_too_small(sp.area)) {
+						sp.fill = sp.polygon.fill0;
+						sp.stroke = sp.polygon.stroke;
+						shapeadd.push_back(sp);
+					}
 				}
 			}
 			if(right.find(line)==right.end() &&
@@ -288,22 +302,57 @@ ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::Shap
 				this->find_connected_shapes(&sp.polygon, line, true, &left, &right, &outersegments);
 				if(sp.polygon.closed) {
 					sp.area = this->shape_area(sp.polygon);
-					sp.polygon.fill0 = sp.polygon.fill1;
-					shapeadd.push_back(sp);
+					if(!this->shape_area_too_small(sp.area)) {
+						sp.fill = sp.polygon.fill1;
+						sp.stroke = sp.polygon.stroke;
+						shapeadd.push_back(sp);
+					}
 				}
 			}
 		}
 	}
-	for(SWFPolygonList::iterator outer=shapeadd.begin(); outer!=shapeadd.end(); outer++) {	// Find this shape's children in our original list
+	std::sort(shapeadd.begin(), shapeadd.end(),							// Sort from smallest to largest
+		[](const SWFPolygon &a, const SWFPolygon &b) { return abs(a.area) < abs(b.area); });
+
+	std::set<SWFPolygonList::iterator> deletenewshapes, deleteoldshapes;
+	for(SWFPolygonList::iterator outer=shapeadd.begin(); outer!=shapeadd.end(); outer++) {	// Find new shapes that share a fill with their parent and remove them
+		for(SWFPolygonList::iterator inner=shapeadd.begin(); inner!=shapeadd.end(); inner++) {
+			if(outer!=inner &&
+				deletenewshapes.find(inner)==deletenewshapes.end() &&
+				this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon) &&
+				outer->fill==inner->fill) {
+				deletenewshapes.insert(inner);
+				break;
+			}
+		}
 		for(SWFPolygonList::iterator inner=shapeparts.begin(); inner!=shapeparts.end(); inner++) {
-			if(this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon) &&
-				inner->parent<0) {	// Only add a child if the found shape has no parent already
-				inner->parent = (outer-shapeadd.begin())+shapeparts.size();	// Set the new outer shape as the child shape's parent (assuming we'll later be appending the new shapes to the old list)
-				outer->children.push_back(inner-shapeparts.begin());
+			if(outer!=inner &&
+				deleteoldshapes.find(inner)==deleteoldshapes.end() &&
+				this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon) &&
+				outer->fill==inner->fill) {
+				deleteoldshapes.insert(inner);
+				break;
 			}
 		}
 	}
-	shapeparts.insert(shapeparts.end(), shapeadd.begin(), shapeadd.end());	// Finally, merge our newly-found shapes to the previous list
+	for(std::set<SWFPolygonList::iterator>::iterator d=deletenewshapes.begin(); d!=deletenewshapes.end(); d++)
+		shapeadd.erase(*d);
+	for(std::set<SWFPolygonList::iterator>::iterator d=deleteoldshapes.begin(); d!=deleteoldshapes.end(); d++)
+		shapeparts.erase(*d);
+
+	uint16_t partssize = shapeparts.size();
+	shapeparts.insert(shapeparts.end(), shapeadd.begin(), shapeadd.end());	// Merge our newly-found shapes into the previous list
+	for(SWFPolygonList::iterator outer=shapeparts.begin()+partssize; outer!=shapeparts.end(); outer++) {	// Finally, find children for our new shapes
+		for(SWFPolygonList::iterator inner=shapeparts.begin(); inner!=shapeparts.end(); inner++) {
+			if(inner!=outer &&
+				!inner->has_parent &&	// Only add a child if the found shape has no parent
+				abs(inner->area)<abs(outer->area) &&	// A child can't have a larger area than its parent
+				this->shape_contains_point(inner->polygon.vertices.front().anchor, outer->polygon)) {
+				outer->children.push_back(inner-shapeparts.begin());
+				inner->has_parent = true;
+			}
+		}
+	}
 
 	return shapeparts;
 }
