@@ -493,9 +493,12 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 			if(!jshape[PV_JSON_NAME_LAYER].is_null())
 				pvshape.layer = jshape[PV_JSON_NAME_LAYER];
 			if(jshapefill>0) {
+				pvshape.hasfill = true;
 				json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES][characterid][jshapefill-1][PV_JSON_NAME_COLOUR];
 				pvshape.fillcolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
 				if(jcolour.size()>3)	pvshape.fillcolour.a = jcolour[3]/255.0f;
+			} else {
+				pvshape.hasfill = false;
 			}
 			//uint16_t jshapestroke = jshape[PV_JSON_NAME_STROKE];
 			//if(jshapestroke>0) {

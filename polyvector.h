@@ -13,7 +13,7 @@
 #include "resource_importer_swf.h"
 #include "earcut.hpp/earcut.hpp"
 
-#define POLYVECTOR_DEBUG
+//#define POLYVECTOR_DEBUG
 
 using Coord = float;
 using Point = Vector2;
@@ -53,6 +53,8 @@ public:
 	Vector2 get_offset();
 	void set_layer_separation(real_t);
 	real_t get_layer_separation();
+	void set_albedo_colour(Color);
+	Color get_albedo_colour();
 	void set_material_unshaded(bool);
 	bool get_material_unshaded();
 
@@ -80,18 +82,17 @@ private:
 	MeshDictionaryMap mapMeshDictionary;
 	MeshInstanceMap mapMeshDisplay;
 	Vector2 v2Dimensions;
-	bool bZOrderOffset;
-	real_t fLayerDepth;
+
+	real_t fTime;
+	int8_t iCurveQuality;
 	real_t fUnitScale;
+	Vector2 v2Offset;
+	real_t fLayerDepth;
+	real_t fMaxTessellationAngle;
 
 	List<PolyVectorFrame> lFrameData;
 	List<PolyVectorCharacter> lDictionaryData;
-	real_t fTime;
 	real_t fFps;
-	Vector2 v2Offset;
-	int8_t iCurveQuality;
-
-	real_t fMaxTessellationAngle;
 
 	#ifdef POLYVECTOR_DEBUG
 	OS *os;

@@ -4,10 +4,10 @@ PolyVector::PolyVector()
 {
 	this->fTime = 0.0f;
 	this->fUnitScale = 1.0f;
-	this->v2Offset = Vector2( 0.0f, 0.0f );
+	this->v2Offset = Vector2(0.0f, 0.0f);
 	this->iCurveQuality = 2;
-	this->bZOrderOffset = true;
 	this->fLayerDepth = 0.0f;
+	this->fMaxTessellationAngle = 4.0f;
 
 	this->materialDefault.instance();
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
@@ -17,7 +17,6 @@ PolyVector::PolyVector()
 	#ifdef POLYVECTOR_DEBUG
 	this->bDebugWireframe = false;
 	this->materialDebug.instance();
-	this->materialDefault->set_flag(SpatialMaterial::FLAG_UNSHADED, true);
 	this->os = OS::get_singleton();
 	this->dTriangulationTime = 0.0L;
 	this->dMeshUpdateTime = 0.0L;
@@ -66,6 +65,7 @@ void PolyVector::draw_current_frame()
 
 			for(PolyVectorCharacter::Element *s=pvchar->front(); s; s=s->next()) {
 				PolyVectorShape &shape = s->get();
+				if(!shape.hasfill)	continue;
 				std::vector< std::vector<Vector2> > polygons;
 				std::vector<Vector2> tessverts;
 				PoolVector<Vector2> tess = shape.path.curve.tessellate(this->iCurveQuality, this->fMaxTessellationAngle);
@@ -254,6 +254,15 @@ real_t PolyVector::get_layer_separation()
 	return this->fLayerDepth;
 }
 
+void PolyVector::set_albedo_colour(Color c)
+{
+	this->materialDefault->set_albedo(c);
+}
+Color PolyVector::get_albedo_colour()
+{
+	return this->materialDefault->get_albedo();
+}
+
 void PolyVector::set_material_unshaded(bool t)
 {
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_UNSHADED, t);
@@ -358,11 +367,15 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "layer_separation", PROPERTY_HINT_RANGE, "0.0, 1.0, 0.0"), "set_layer_separation", "get_layer_separation");
 
+	ClassDB::bind_method(D_METHOD("set_albedo_colour"), &PolyVector::set_albedo_colour);
+	ClassDB::bind_method(D_METHOD("get_albedo_colour"), &PolyVector::get_albedo_colour);
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "albedo_colour"), "set_albedo_colour", "get_albedo_colour");
+
 
 	ADD_GROUP("Advanced","");
 	ClassDB::bind_method(D_METHOD("set_max_tessellation_angle"), &PolyVector::set_max_tessellation_angle);
 	ClassDB::bind_method(D_METHOD("get_max_tessellation_angle"), &PolyVector::get_max_tessellation_angle);
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "max_tessellation_angle", PROPERTY_HINT_RANGE, "1.0, 10.0, 1.0, 4.0"), "set_max_tessellation_angle", "get_max_tessellation_angle");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "max_tessellation_angle", PROPERTY_HINT_RANGE, "1.0, 10.0, 0.1, 4.0"), "set_max_tessellation_angle", "get_max_tessellation_angle");
 
 
 	#ifdef POLYVECTOR_DEBUG

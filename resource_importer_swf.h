@@ -43,7 +43,9 @@ struct PolyVectorShape
 	uint8_t layer;
 	PolyVectorPath path;
 	List<uint16_t> holes;
+	bool hasfill = true;
 	Color fillcolour;
+	bool hasstroke = false;
 	Color strokecolour;
 
 	Map<uint16_t, List<PoolVector2Array> > strokes;
