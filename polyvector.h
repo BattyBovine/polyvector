@@ -8,7 +8,6 @@
 #include <scene/3d/mesh_instance.h>
 #include <scene/animation/animation_player.h>
 #include <scene/resources/curve.h>
-#include <thirdparty/nanosvg/nanosvg.h>
 
 #include "resource_importer_swf.h"
 #include "earcut.hpp/earcut.hpp"
@@ -81,7 +80,6 @@ private:
 	Ref<SpatialMaterial> materialDefault;
 	MeshDictionaryMap mapMeshDictionary;
 	MeshInstanceMap mapMeshDisplay;
-	Vector2 v2Dimensions;
 
 	real_t fTime;
 	int8_t iCurveQuality;
