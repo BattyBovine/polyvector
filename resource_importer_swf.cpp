@@ -117,13 +117,13 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 							this->points_reverse(&shape->polygon);
 						for(std::vector<SWF::Vertex>::iterator v=shape->polygon.vertices.begin(); v!=shape->polygon.vertices.end(); v++) {
 							if(v!=shape->polygon.vertices.begin()) {
-								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->control.x  : double(round(v->control.x*100.0f)/100.0L);
-								shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? -v->control.y : double(round(-v->control.y*100.0f)/100.0L);
+								shapeout[PV_JSON_NAME_VERTICES] += (bool(p_options["binary"]) ? v->control.x  : double(round(v->control.x*100.0f)/100.0L))	* (float(p_options["scale"])/1000.0f);
+								shapeout[PV_JSON_NAME_VERTICES] += (bool(p_options["binary"]) ? -v->control.y : double(round(-v->control.y*100.0f)/100.0L))	* (float(p_options["scale"])/1000.0f);
 							}
 							if(shapeout[PV_JSON_NAME_CLOSED]==true && v==(shape->polygon.vertices.end()-1))
 								break;
-							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? v->anchor.x  : double(round(v->anchor.x*100.0f)/100.0L);
-							shapeout[PV_JSON_NAME_VERTICES] += bool(p_options["binary"]) ? -v->anchor.y : double(round(-v->anchor.y*100.0f)/100.0L);
+							shapeout[PV_JSON_NAME_VERTICES] += (bool(p_options["binary"]) ? v->anchor.x  : double(round(v->anchor.x*100.0f)/100.0L))	* (float(p_options["scale"])/1000.0f);
+							shapeout[PV_JSON_NAME_VERTICES] += (bool(p_options["binary"]) ? -v->anchor.y : double(round(-v->anchor.y*100.0f)/100.0L))	* (float(p_options["scale"])/1000.0f);
 						}
 						for(std::list<uint16_t>::iterator h=shape->children.begin(); h!=shape->children.end(); h++) {
 							shapeout[PV_JSON_NAME_HOLES] += (*h);
@@ -138,27 +138,45 @@ Error ResourceImporterSWF::import(const String &p_source_file, const String &p_s
 			SWF::DisplayList framedisplist = *f;
 			json jdisplaylist;
 			for(SWF::DisplayList::iterator dl=framedisplist.begin(); dl!=framedisplist.end(); dl++) {
-				if(dl->second.id>0) {
+				SWF::DisplayChar &displaychar = dl->second;
+				if(displaychar.id>0) {
 					json charout;
-					charout[PV_JSON_NAME_ID] = charactermap[dl->second.id-1];
+					charout[PV_JSON_NAME_ID] = charactermap[displaychar.id-1];
 					charout[PV_JSON_NAME_DEPTH] = dl->first;
-					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.TranslateX  : double(round(dl->second.transform.TranslateX*100) / 100.0L);
-					charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.TranslateY  : double(round(dl->second.transform.TranslateY*100) / 100.0L);
-					if((round(dl->second.transform.ScaleX*100)!=100.0f || round(dl->second.transform.ScaleY*100)!=100.0f) ||	// Only add the scale and rotate transformation values if they are different from the default
-						(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f)) {	// If the rotation value is different but scale is not, store the scale value anyway
-						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleX : double(round(dl->second.transform.ScaleX*100) / 100.0L);
-						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? dl->second.transform.ScaleY : double(round(dl->second.transform.ScaleY*100) / 100.0L);
-						if(round(dl->second.transform.RotateSkew0*100)!=0.0f || round(dl->second.transform.RotateSkew1*100)!=0.0f) {
-							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? -dl->second.transform.RotateSkew0 : double(round(-dl->second.transform.RotateSkew0*100) / 100.0L);
-							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? -dl->second.transform.RotateSkew1 : double(round(-dl->second.transform.RotateSkew1*100) / 100.0L);
+					charout[PV_JSON_NAME_TRANSFORM] += (bool(p_options["binary"]) ? displaychar.transform.TranslateX  : double(round(displaychar.transform.TranslateX*100) / 100.0L)) * (float(p_options["scale"])/1000.0f);
+					charout[PV_JSON_NAME_TRANSFORM] += (bool(p_options["binary"]) ? displaychar.transform.TranslateY  : double(round(displaychar.transform.TranslateY*100) / 100.0L)) * (float(p_options["scale"])/1000.0f);
+					if((round(displaychar.transform.ScaleX*100)!=100.0f || round(displaychar.transform.ScaleY*100)!=100.0f) ||	// Only add the scale and rotate transformation values if they are different from the default
+						(round(displaychar.transform.RotateSkew0*100)!=0.0f || round(displaychar.transform.RotateSkew1*100)!=0.0f)) {	// If the rotation value is different but scale is not, store the scale value anyway
+						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? displaychar.transform.ScaleX : double(round(displaychar.transform.ScaleX*100) / 100.0L);
+						charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? displaychar.transform.ScaleY : double(round(displaychar.transform.ScaleY*100) / 100.0L);
+						if(round(displaychar.transform.RotateSkew0*100)!=0.0f || round(displaychar.transform.RotateSkew1*100)!=0.0f) {
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? -displaychar.transform.RotateSkew0 : double(round(-displaychar.transform.RotateSkew0*100) / 100.0L) * (float(p_options["scale"])/1000.0f);
+							charout[PV_JSON_NAME_TRANSFORM] += bool(p_options["binary"]) ? -displaychar.transform.RotateSkew1 : double(round(-displaychar.transform.RotateSkew1*100) / 100.0L) * (float(p_options["scale"])/1000.0f);
 						}
+					}
+					if(displaychar.colourtransform.IsModified()) {
+						json cxformentry;
+						cxformentry += (displaychar.colourtransform.RedAddTerm/256.0f);
+						cxformentry += displaychar.colourtransform.RedMultTerm;
+						cxformentry += (displaychar.colourtransform.GreenAddTerm/256.0f);
+						cxformentry += displaychar.colourtransform.GreenMultTerm;
+						cxformentry += (displaychar.colourtransform.BlueAddTerm/256.0f);
+						cxformentry += displaychar.colourtransform.BlueMultTerm;
+						if(displaychar.colourtransform.AlphaAddTerm!=0 ||
+							displaychar.colourtransform.AlphaMultTerm!=1.0f) {
+							cxformentry += (displaychar.colourtransform.AlphaAddTerm/256.0f);
+							cxformentry += displaychar.colourtransform.AlphaMultTerm;
+						}
+						charout[PV_JSON_NAME_CXFORM] = cxformentry;
 					}
 					jdisplaylist += charout;
 				}
 			}
-			if(jdisplaylist.size()>0) root[PV_JSON_NAME_FRAMES] += jdisplaylist;
+			root[PV_JSON_NAME_FRAMES] += jdisplaylist;
 		}
 		root[PV_JSON_NAME_FPS] = bool(p_options["binary"]) ? swfparser->get_properties()->framerate : double(round(swfparser->get_properties()->framerate*100) / 100.0L);
+		root[PV_JSON_NAME_DIMS].push_back(int(swfparser->get_properties()->dimensions.xmax));
+		root[PV_JSON_NAME_DIMS].push_back(int(swfparser->get_properties()->dimensions.ymax));
 
 		FileAccess *pvimport = FileAccess::open(p_save_path + ".jvec", FileAccess::WRITE);
 		ERR_FAIL_COND_V(!pvimport, ERR_FILE_CANT_WRITE);
@@ -185,6 +203,7 @@ void ResourceImporterSWF::get_import_options(List<ImportOption> *r_options, int 
 {
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "binary"), false));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "prettify_text"), false));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::REAL, "scale"), 1.0f));
 }
 
 ResourceImporterSWF::SWFPolygonList ResourceImporterSWF::shape_builder(SWF::ShapeList sl)
@@ -493,18 +512,15 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 			if(!jshape[PV_JSON_NAME_LAYER].is_null())
 				pvshape.layer = jshape[PV_JSON_NAME_LAYER];
 			if(jshapefill>0) {
-				pvshape.hasfill = true;
 				json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_FILLSTYLES][characterid][jshapefill-1][PV_JSON_NAME_COLOUR];
-				pvshape.fillcolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
-				if(jcolour.size()>3)	pvshape.fillcolour.a = jcolour[3]/255.0f;
-			} else {
-				pvshape.hasfill = false;
+				pvshape.fillcolour = new Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
+				if(jcolour.size()>3)	pvshape.fillcolour->a = jcolour[3]/255.0f;
 			}
 			//uint16_t jshapestroke = jshape[PV_JSON_NAME_STROKE];
 			//if(jshapestroke>0) {
 			//	json jcolour = jsondata[PV_JSON_NAME_LIBRARY][PV_JSON_NAME_LINESTYLES][characterid][jshapestroke-1][PV_JSON_NAME_COLOUR];
-			//	pvshape.strokecolour = Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
-			//	if(jcolour.size()>3)	pvshape.strokecolour.a = jcolour[3]/255.0f;
+			//	pvshape.strokecolour = new Color(jcolour[0]/255.0f, jcolour[1]/255.0f, jcolour[2]/255.0f);
+			//	if(jcolour.size()>3)	pvshape.strokecolour->a = jcolour[3]/255.0f;
 			//}
 			PolyVectorPath pvpath = this->verts_to_curve(jshape[PV_JSON_NAME_VERTICES]);
 			pvpath.closed = jshape[PV_JSON_NAME_CLOSED];
@@ -537,12 +553,27 @@ RES ResourceLoaderJSONVector::load(const String &p_path, const String &p_origina
 				pvom.matrix.Skew0 = jdisplayitem[PV_JSON_NAME_TRANSFORM][4];
 				pvom.matrix.Skew1 = jdisplayitem[PV_JSON_NAME_TRANSFORM][5];
 			}
+			json cxformarray = jdisplayitem[PV_JSON_NAME_CXFORM];
+			if(cxformarray.size()>0) {
+				pvom.tint = new PolyVectorColourTransform();
+				pvom.tint->RedAdd = cxformarray[0];
+				pvom.tint->RedMultiplier = cxformarray[1];
+				pvom.tint->GreenAdd = cxformarray[2];
+				pvom.tint->GreenMultiplier = cxformarray[3];
+				pvom.tint->BlueAdd = cxformarray[4];
+				pvom.tint->BlueMultiplier = cxformarray[5];
+				if(cxformarray.size()>6) {
+					pvom.tint->AlphaAdd = cxformarray[6];
+					pvom.tint->AlphaMultiplier = cxformarray[7];
+				}
+			}
 			frame.push_back(pvom);
 		}
 		vectordata->add_frame(frame);
 	}
 
 	vectordata->set_fps(jsondata[PV_JSON_NAME_FPS]);
+	vectordata->set_dimensions(Vector2(jsondata[PV_JSON_NAME_DIMS][0], jsondata[PV_JSON_NAME_DIMS][1]));
 
 	if(r_error)	*r_error = OK;
 

@@ -12,6 +12,7 @@ using json = nlohmann::json;
 #include <io/resource_loader.h>
 #include <io/resource_saver.h>
 #include <scene/resources/curve.h>
+#include <scene/3d/mesh_instance.h>
 
 #include "libshockwave/swfparser.h"
 
@@ -25,6 +26,17 @@ struct PolyVectorMatrix
 	float ScaleY = 1.0f;
 	float Skew0 = 0.0f;
 	float Skew1 = 0.0f;
+};
+struct PolyVectorColourTransform
+{
+	float RedAdd = 0.0f;
+	float GreenAdd = 0.0f;
+	float BlueAdd = 0.0f;
+	float AlphaAdd = 0.0f;
+	float RedMultiplier = 1.0f;
+	float GreenMultiplier = 1.0f;
+	float BlueMultiplier = 1.0f;
+	float AlphaMultiplier = 1.0f;
 };
 struct PolyVectorPath
 {
@@ -40,13 +52,16 @@ struct PolyVectorPath
 };
 struct PolyVectorShape
 {
+	~PolyVectorShape()
+	{
+		if(fillcolour==NULL)	delete fillcolour;
+		if(strokecolour==NULL)	delete strokecolour;
+	}
 	uint8_t layer;
 	PolyVectorPath path;
 	List<uint16_t> holes;
-	bool hasfill = true;
-	Color fillcolour;
-	bool hasstroke = false;
-	Color strokecolour;
+	Color *fillcolour = NULL;
+	Color *strokecolour = NULL;
 
 	Map<uint16_t, List<PoolVector2Array> > strokes;
 };
@@ -54,11 +69,17 @@ typedef List<PolyVectorShape> PolyVectorCharacter;
 
 struct PolyVectorSymbol
 {
+	~PolyVectorSymbol() { if(tint==NULL) delete tint; }
 	uint16_t id = 0;
 	uint16_t depth = 0;
 	PolyVectorMatrix matrix;
+	PolyVectorColourTransform *tint = NULL;
 };
 typedef List<PolyVectorSymbol> PolyVectorFrame;
+
+typedef Map<uint16_t, Ref<ArrayMesh> > MeshQualityMap;
+typedef Map<uint16_t, MeshQualityMap> MeshDictionaryMap;
+typedef Map<uint16_t, MeshInstance*> MeshInstanceMap;
 
 #ifdef TOOLS_ENABLED
 //class ResourceImporterSVG : public ResourceImporter {
@@ -136,9 +157,12 @@ class JSONVector : public Resource
 	OBJ_SAVE_TYPE(JSONVector);
 	RES_BASE_EXTENSION("jvec");
 
+	real_t fps;
+	Vector2 dimensions;
 	List<PolyVectorCharacter> dictionary;
 	List<PolyVectorFrame> frames;
-	real_t fps;
+
+	MeshDictionaryMap mapMeshDictionary;
 
 public:
 	JSONVector() {}
@@ -152,9 +176,14 @@ public:
 
 	void set_fps(real_t f) { this->fps = f; }
 	real_t get_fps() { return this->fps; }
+	void set_dimensions(Vector2 d) { this->dimensions = d; }
+	Vector2 get_dimensions() { return this->dimensions; }
+
+	MeshDictionaryMap &get_mesh_dictionary() { return this->mapMeshDictionary; }
 };
 
 #define PV_JSON_NAME_FPS		"FPS"
+#define PV_JSON_NAME_DIMS		"Dimensions"
 #define PV_JSON_NAME_LIBRARY	"Library"
 #define PV_JSON_NAME_CHARACTERS	"Characters"
 #define PV_JSON_NAME_LAYER		"Layer"
@@ -171,5 +200,6 @@ public:
 #define PV_JSON_NAME_ID			"ID"
 #define PV_JSON_NAME_DEPTH		"Depth"
 #define PV_JSON_NAME_TRANSFORM	"Transform"
+#define PV_JSON_NAME_CXFORM		"CXform"
 
 #endif // RESOURCE_IMPORTER_SWF_H_f6e3a78cd13111e78941cec278b6b50a

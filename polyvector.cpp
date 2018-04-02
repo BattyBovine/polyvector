@@ -3,7 +3,6 @@
 PolyVector::PolyVector()
 {
 	this->fTime = 0.0f;
-	this->fUnitScale = 1.0f;
 	this->v2Offset = Vector2(0.0f, 0.0f);
 	this->iCurveQuality = 2;
 	this->fLayerDepth = 0.0f;
@@ -11,7 +10,6 @@ PolyVector::PolyVector()
 
 	this->materialDefault.instance();
 	this->materialDefault->set_flag(SpatialMaterial::FLAG_ALBEDO_FROM_VERTEX_COLOR, true);
-	this->materialDefault->set_flag(SpatialMaterial::FLAG_SRGB_VERTEX_COLOR, true);
 	this->materialDefault->set_cull_mode(SpatialMaterial::CULL_DISABLED);
 
 	#ifdef POLYVECTOR_DEBUG
@@ -40,17 +38,18 @@ void PolyVector::draw_current_frame()
 	#ifdef POLYVECTOR_DEBUG
 	uint64_t debugtimer = this->os->get_ticks_usec();
 	#endif
+	MeshDictionaryMap &meshdict = this->dataVectorFile->get_mesh_dictionary();
 	for(MeshInstanceMap::Element *m=this->mapMeshDisplay.front(); m; m=m->next())
 		m->get()->set_visible(false);
 	float layer_separation = 0.0f;
 	PolyVectorFrame *framedata = &this->lFrameData[frameno];
 	for(PolyVectorFrame::Element *c=framedata->front(); c; c=c->next()) {
 		PolyVectorSymbol symbol = c->get();
-		if(!this->mapMeshDictionary.has(symbol.id)) {
+		if(!meshdict.has(symbol.id)) {
 			MeshQualityMap mqm;
-			this->mapMeshDictionary[symbol.id] = mqm;
+			meshdict[symbol.id] = mqm;
 		}
-		if(!this->mapMeshDictionary[symbol.id].has(this->iCurveQuality)) {
+		if(!meshdict[symbol.id].has(this->iCurveQuality)) {
 			PolyVectorCharacter *pvchar = &this->lDictionaryData[symbol.id];
 			Array arr;
 			arr.resize(Mesh::ARRAY_MAX);
@@ -65,7 +64,8 @@ void PolyVector::draw_current_frame()
 
 			for(PolyVectorCharacter::Element *s=pvchar->front(); s; s=s->next()) {
 				PolyVectorShape &shape = s->get();
-				if(!shape.hasfill)	continue;
+				if(shape.fillcolour==NULL)
+					continue;
 				std::vector< std::vector<Vector2> > polygons;
 				std::vector<Vector2> tessverts;
 				PoolVector<Vector2> tess = shape.path.curve.tessellate(this->iCurveQuality, this->fMaxTessellationAngle);
@@ -100,7 +100,7 @@ void PolyVector::draw_current_frame()
 				if(!polygons.empty()) {
 					std::vector<N> indices = mapbox::earcut<N>(polygons);
 					for(std::vector<N>::reverse_iterator tris=indices.rbegin(); tris!=indices.rend(); tris++) {	// Work through the vector in reverse to make sure the triangles' normals are facing forward
-						colours.push_back(shape.fillcolour);
+						colours.push_back(shape.fillcolour->to_linear());
 						normals.push_back(Vector3(0.0f, 0.0f, 1.0f));
 						vertices.push_back(Vector3(tessverts[*tris].x, tessverts[*tris].y, 0.0f));
 						#ifdef POLYVECTOR_DEBUG
@@ -126,7 +126,7 @@ void PolyVector::draw_current_frame()
 			}
 			#endif
 
-			this->mapMeshDictionary[symbol.id][this->iCurveQuality] = newmesh;
+			meshdict[symbol.id][this->iCurveQuality] = newmesh;
 		}
 		if(!this->mapMeshDisplay.has(symbol.depth)) {
 			MeshInstance *mi = memnew(MeshInstance);
@@ -135,14 +135,14 @@ void PolyVector::draw_current_frame()
 			this->mapMeshDisplay[symbol.depth] = mi;
 		}
 		MeshInstance *mi = this->mapMeshDisplay[symbol.depth];
-		mi->set_mesh(this->mapMeshDictionary[symbol.id][this->iCurveQuality]);
+		mi->set_mesh(meshdict[symbol.id][this->iCurveQuality]);
 		Transform transform;
-		Vector2 offset = this->v2Offset*this->fUnitScale;
+		Vector2 offset = this->v2Offset;
 		transform.set(
-			symbol.matrix.ScaleX*this->fUnitScale,				symbol.matrix.Skew1*this->fUnitScale,					0.0f,
-			symbol.matrix.Skew0*this->fUnitScale,				symbol.matrix.ScaleY*this->fUnitScale,					0.0f,
-			0.0f,												0.0f,													1.0f,
-			symbol.matrix.TranslateX*this->fUnitScale+offset.x,	-symbol.matrix.TranslateY*this->fUnitScale+offset.y,	layer_separation
+			symbol.matrix.ScaleX,				symbol.matrix.Skew1,				0.0f,
+			symbol.matrix.Skew0,				symbol.matrix.ScaleY,				0.0f,
+			0.0f,								0.0f,								1.0f,
+			offset.x+symbol.matrix.TranslateX,	offset.y-symbol.matrix.TranslateY,	layer_separation
 		);
 		mi->set_transform(transform);
 		mi->set_visible(true);
@@ -155,7 +155,8 @@ void PolyVector::draw_current_frame()
 
 void PolyVector::clear_mesh_data()
 {
-	for(MeshDictionaryMap::Element *d=this->mapMeshDictionary.front(); d; d=d->next()) {
+	MeshDictionaryMap &meshdict = this->dataVectorFile->get_mesh_dictionary();
+	for(MeshDictionaryMap::Element *d=meshdict.front(); d; d=d->next()) {
 		for(MeshQualityMap::Element *m=d->get().front(); m; m=m->next())
 			m->get().unref();
 		d->get().clear();
@@ -224,16 +225,6 @@ int8_t PolyVector::get_curve_quality()
 	return this->iCurveQuality;
 }
 
-void PolyVector::set_unit_scale(real_t s)
-{
-	this->fUnitScale=(s/1000.0f);
-	this->draw_current_frame();
-}
-real_t PolyVector::get_unit_scale()
-{
-	return (this->fUnitScale*1000.0f);
-}
-
 void PolyVector::set_offset(Vector2 s)
 {
 	this->v2Offset=s;
@@ -288,8 +279,13 @@ real_t PolyVector::get_max_tessellation_angle()
 AABB PolyVector::get_aabb() const
 {
 	AABB aabbfull;
-	for(MeshInstanceMap::Element *mi=this->mapMeshDisplay.front(); mi; mi=mi->next())
-		aabbfull.merge_with(mi->get()->get_transformed_aabb());
+	aabbfull.set_position(Vector3(-0.5f, -0.5f, -0.5f));
+	aabbfull.set_size(Vector3(1.0f, 1.0f, 1.0f));
+	//for(MeshInstanceMap::Element *mi=this->mapMeshDisplay.front(); mi; mi=mi->next()) {
+	//	MeshInstance *meshinstance = mi->get();
+	//	aabbfull.expand_to(meshinstance->get_translation());
+	//	aabbfull.expand_to(meshinstance->get_aabb().get_size()*meshinstance->get_scale());
+	//}
 	return aabbfull;
 }
 
@@ -311,7 +307,6 @@ void PolyVector::set_debug_wireframe(bool b)
 	this->clear_mesh_data();
 	this->draw_current_frame();
 }
-
 bool PolyVector::get_debug_wireframe()
 {
 	return this->bDebugWireframe;
@@ -358,10 +353,6 @@ void PolyVector::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_offset"), &PolyVector::set_offset);
 	ClassDB::bind_method(D_METHOD("get_offset"), &PolyVector::get_offset);
 	ADD_PROPERTYNZ(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
-
-	ClassDB::bind_method(D_METHOD("set_unit_scale"), &PolyVector::set_unit_scale);
-	ClassDB::bind_method(D_METHOD("get_unit_scale"), &PolyVector::get_unit_scale);
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "unit_scale", PROPERTY_HINT_RANGE, "0.0, 1000.0, 1.0, 1.0"), "set_unit_scale", "get_unit_scale");
 
 	ClassDB::bind_method(D_METHOD("set_layer_separation"), &PolyVector::set_layer_separation);
 	ClassDB::bind_method(D_METHOD("get_layer_separation"), &PolyVector::get_layer_separation);

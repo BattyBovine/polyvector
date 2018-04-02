@@ -12,7 +12,7 @@
 #include "resource_importer_swf.h"
 #include "earcut.hpp/earcut.hpp"
 
-//#define POLYVECTOR_DEBUG
+#define POLYVECTOR_DEBUG
 
 using Coord = float;
 using Point = Vector2;
@@ -22,10 +22,6 @@ template <> struct nth<0, Vector2> { inline static auto get(const Vector2 &v) { 
 template <> struct nth<1, Vector2> { inline static auto get(const Vector2 &v) { return v.y; }; };
 }
 }
-
-typedef Map<uint16_t, Ref<ArrayMesh> > MeshQualityMap;
-typedef Map<uint16_t, MeshQualityMap> MeshDictionaryMap;
-typedef Map<uint16_t, MeshInstance*> MeshInstanceMap;
 
 
 
@@ -46,8 +42,6 @@ public:
 	real_t get_time();
 	void set_curve_quality(int8_t);
 	int8_t get_curve_quality();
-	void set_unit_scale(real_t);
-	real_t get_unit_scale();
 	void set_offset(Vector2);
 	Vector2 get_offset();
 	void set_layer_separation(real_t);
@@ -78,12 +72,10 @@ protected:
 private:
 	Ref<JSONVector> dataVectorFile;
 	Ref<SpatialMaterial> materialDefault;
-	MeshDictionaryMap mapMeshDictionary;
 	MeshInstanceMap mapMeshDisplay;
 
 	real_t fTime;
 	int8_t iCurveQuality;
-	real_t fUnitScale;
 	Vector2 v2Offset;
 	real_t fLayerDepth;
 	real_t fMaxTessellationAngle;
